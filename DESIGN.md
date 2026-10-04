@@ -2,7 +2,7 @@
 
 Working title (from the folder name). Claude's design doc; Alva's scratchpad is `Notes.md` (read-only for Claude, git-ignored).
 
-Status: design agreed for the core; milestone 1 (window, tile renderer, camera) is built.
+Status: design agreed for the core; milestone 1 (window, tile renderer, camera) is done and milestone 2 (map editor) is built.
 
 ## Pitch
 
@@ -108,17 +108,19 @@ Muted, warm, old-school. In the test sheet B is the A panel pushed through two a
 
 ## How it is built
 
-Milestone 1, as of 2026-10-04.
+Milestones 1 and 2, as of 2026-10-04.
 
-- **Layout.** A Cargo workspace: `crates/sim` (pure std: terrain, the chunked world, props, a test map) and `crates/game` (the binary `explore-the-world`: camera, sprite sheet packer, scene builder, the wgpu passes, the Lantern UI 2 host). Art sources in `art/`, what the game loads in `assets/`.
+- **Layout.** A Cargo workspace: `crates/sim` (pure std: terrain, the chunked world, props, the edit tools and their history, map files, a test map) and `crates/game` (the binary `explore-the-world`: camera, sprite sheet packer, scene builder, the wgpu passes, the map editor and its panel, the Lantern UI 2 host). Art sources in `art/`, what the game loads in `assets/`.
 - **Window.** Lantern UI 2 by path, unmodified. One area with no header and no title bar; the world fills it and the interface will draw over it.
 - **World pass.** The world is drawn into a picture of its own that holds the art's sRGB numbers and blends them as they are, the way Lantern Studio composites, then that picture is put on the window. Blending in linear light instead made shadows visibly paler than the approved art.
 - **Ground.** Drawn on the dual grid: one quad per square between four tile centres. Kinds stack grass < dirt < sand < water; a layer covers its own tiles and those of every kind above it, so no gap opens where two meet. The shader shapes each quad from which corners it covers, with corners rounded to half a tile and a rim just inside the edge. There is no transition art.
 - **Sprites.** Listed in `assets/sprites.toml` (file, rect, anchor). Art is 200 px per tile, twice the style sheet, so it stays sharp up to full zoom. Packed at startup into one sheet with smaller copies for zooming out; drawn back to front by where they stand.
 - **Decoration.** Grass tufts are scattered by a hash of the tile, on about one bare grass tile in five. They are not world data.
-- **Test map.** `sim::testmap` is a made-up 48 x 32 map to look at until the editor exists. Not content.
-- **Controls for now.** Wheel zooms about the pointer, middle-drag or arrows / WASD move the view, F11 fullscreen, Ctrl+Q quits.
-- **How it is checked.** 58 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs.
+- **The map.** `assets/maps/overworld/` is the real map: the game loads it and the editor saves to it. It started as `sim::testmap`, a made-up 48 x 32 map, written out once (Alva's choice); that generator stays for the tests.
+- **Map files.** One compact binary file per 32 x 32 chunk (Alva's choice), named for the chunk (`-1_0.chunk`), about 500 bytes each for the test map. Versioned, in tagged sections so layers can be added. Ground and props are stored by name, not number, so kinds can be added or reordered without breaking saved maps; an unknown name is an error, never a silent hole. Only changed chunks are written, each whole and then moved into place; a chunk erased to nothing loses its file.
+- **Map editor.** F2 docks a panel on the left (a real Lantern UI 2 area, so its edge drags): undo, redo, save; the tools (brush, eraser, fill, place, remove); the brush's width, 1 to 9 tiles; the grounds; the props with their pictures. The left button works the held tool on the world, with the tiles it would touch lit under the pointer. A whole stroke is one undo step, 500 steps deep. Quitting with unsaved changes asks first.
+- **Controls for now.** Wheel zooms about the pointer, middle-drag or arrows / WASD move the view, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
+- **How it is checked.** 111 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map.
 
 ### Calls Claude made, Alva's to overrule
 
@@ -130,6 +132,12 @@ Milestone 1, as of 2026-10-04.
 6. Props stand with their anchor on the middle of their tile.
 7. A tile is 100 logical pixels at zoom 1; zoom runs 0.4 to 2.
 8. No title bar.
+9. Painting ground leaves what stands on it; erasing takes the ground and what stood there.
+10. The fill floods tiles joined by their sides, and does nothing where there is no ground.
+11. Placing a prop on a tile that has one replaces it.
+12. Picking a ground takes up the brush (or keeps the fill if that is held); picking a prop takes up the place tool.
+13. While editing, the view may leave the map by half a screen, to paint new ground past its edge.
+14. Props are still the four placeholder kinds. They become data-defined objects when they start to do things (mining, picking).
 
 ## Open questions
 
@@ -137,7 +145,6 @@ Milestone 1, as of 2026-10-04.
 - Travel speed in tiles per tick
 - Level cap and XP curve
 - Quests and NPC dialogue: when, and how deep
-- Tile size on screen and zoom: built as 100 logical px per tile, zoom 0.4 to 2; right once Alva has seen it?
 - Where assets live for a deployed binary (it finds them beside itself, else in the source tree)
 - Ground edges: keep the shader's rounded steps, or hand-drawn transitions?
 - Save system
@@ -147,8 +154,8 @@ Milestone 1, as of 2026-10-04.
 ## Milestones (proposal)
 
 0. Art style test sheet (terrain, ore rock, herb, player, goblin) to lock the look, tile size, and palette. **Done 2026-10-04**: style approved, palette B Earthy
-1. Window, tile renderer, camera. **Built 2026-10-04**, awaiting Alva's look
-2. Map editor: paint, place, save, load
+1. Window, tile renderer, camera. **Done 2026-10-04**: Alva ran it ("It looks beautiful!")
+2. Map editor: paint, place, save, load. **Built 2026-10-04**, awaiting Alva's look
 3. Tick simulation, click-to-move pathfinding
 4. Inventory, skills and XP, Mining nodes
 5. Combat: melee auto-attack, abilities, monsters, drops, death

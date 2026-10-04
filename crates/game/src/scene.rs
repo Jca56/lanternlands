@@ -78,7 +78,8 @@ impl Look {
         all.into_iter().filter(|(_, id)| id.is_none()).map(|(name, _)| name).collect()
     }
 
-    fn prop(&self, kind: PropKind) -> Option<SpriteId> {
+    /// The sprite a kind of prop is drawn with, if the assets have it.
+    pub fn prop(&self, kind: PropKind) -> Option<SpriteId> {
         match kind {
             PropKind::Tree => self.tree,
             PropKind::Rock => self.rock,

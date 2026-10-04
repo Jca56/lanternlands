@@ -31,6 +31,21 @@ impl Terrain {
             _ => None,
         }
     }
+
+    /// What it is called in a map file. Never change one: saved maps
+    /// hold these, not ranks, so the order above is free to change.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Terrain::Grass => "grass",
+            Terrain::Dirt => "dirt",
+            Terrain::Sand => "sand",
+            Terrain::Water => "water",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Terrain> {
+        Terrain::ALL.into_iter().find(|t| t.name() == name)
+    }
 }
 
 #[cfg(test)]
@@ -45,5 +60,13 @@ mod tests {
         }
         assert_eq!(Terrain::from_rank(Terrain::COUNT as u8), None);
         assert!(Terrain::Grass < Terrain::Dirt && Terrain::Sand < Terrain::Water);
+    }
+
+    #[test]
+    fn names_round_trip_and_are_all_different() {
+        for t in Terrain::ALL {
+            assert_eq!(Terrain::from_name(t.name()), Some(t));
+        }
+        assert_eq!(Terrain::from_name("lava"), None);
     }
 }

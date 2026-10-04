@@ -1,0 +1,246 @@
+//! The map editor's hands: which tool is held, and what the pointer
+//! does to the world with it. The tools themselves, and the history
+//! that takes them back, are in `sim::edit`.
+
+use lntrn_math::Vec2;
+use sim::edit::{self, History};
+use sim::{PropKind, Terrain, World};
+
+/// The widest the brush goes, in tiles.
+pub const SIZE_MAX: u32 = 9;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tool {
+    /// Lay ground.
+    Brush,
+    /// Take ground away, and what stands on it.
+    Eraser,
+    /// Flood a stretch of one ground with another.
+    Fill,
+    /// Stand a prop on a tile.
+    Place,
+    /// Take a prop off a tile.
+    Remove,
+}
+
+impl Tool {
+    pub const ALL: [Tool; 5] = [Tool::Brush, Tool::Eraser, Tool::Fill, Tool::Place, Tool::Remove];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Tool::Brush => "Brush",
+            Tool::Eraser => "Eraser",
+            Tool::Fill => "Fill",
+            Tool::Place => "Place",
+            Tool::Remove => "Remove",
+        }
+    }
+
+    /// Whether the brush's width matters to it.
+    pub const fn sized(self) -> bool {
+        matches!(self, Tool::Brush | Tool::Eraser)
+    }
+}
+
+pub struct MapEditor {
+    pub tool: Tool,
+    /// How many tiles across the brush and the eraser are.
+    pub size: u32,
+    /// The ground the brush and the fill lay.
+    pub terrain: Terrain,
+    /// What the place tool stands on a tile.
+    pub prop: PropKind,
+    pub history: History,
+    /// Where the stroke under way last touched, in tiles.
+    stroke: Option<Vec2>,
+}
+
+fn tile_under(at: Vec2) -> (i32, i32) {
+    (at.x.floor() as i32, at.y.floor() as i32)
+}
+
+impl MapEditor {
+    pub fn new() -> MapEditor {
+        MapEditor { tool: Tool::Brush, size: 1, terrain: Terrain::Grass, prop: PropKind::Tree, history: History::new(), stroke: None }
+    }
+
+    /// The tiles the held tool would change with the pointer at `at`
+    /// (a point of the world, in tiles).
+    pub fn footprint(&self, at: Vec2) -> Vec<(i32, i32)> {
+        if self.tool.sized() { edit::brush((at.x, at.y), self.size) } else { vec![tile_under(at)] }
+    }
+
+    /// The button went down with the pointer at `at`: a stroke starts.
+    pub fn press(&mut self, world: &mut World, at: Vec2) {
+        self.history.begin();
+        self.stroke = Some(at);
+        let (x, y) = tile_under(at);
+        if self.tool == Tool::Fill {
+            // A flood happens where the button went down and nowhere else.
+            edit::fill(&mut self.history, world, x, y, self.terrain);
+        } else {
+            self.touch(world, at, at);
+        }
+    }
+
+    /// The pointer moved to `at` with the button still down.
+    pub fn drag(&mut self, world: &mut World, at: Vec2) {
+        if let Some(from) = self.stroke.replace(at) {
+            self.touch(world, from, at);
+        } else {
+            self.stroke = None;
+        }
+    }
+
+    /// The button came up, or the stroke was cut short: what it did is
+    /// one step of the history.
+    pub fn release(&mut self) {
+        if self.stroke.take().is_some() {
+            self.history.commit();
+        }
+    }
+
+    #[cfg(test)]
+    fn stroking(&self) -> bool {
+        self.stroke.is_some()
+    }
+
+    pub fn undo(&mut self, world: &mut World) -> bool {
+        self.stroke = None;
+        self.history.undo(world)
+    }
+
+    pub fn redo(&mut self, world: &mut World) -> bool {
+        self.release();
+        self.history.redo(world)
+    }
+
+    /// What every tool but the fill does as the pointer goes from
+    /// `from` to `to`.
+    fn touch(&mut self, world: &mut World, from: Vec2, to: Vec2) {
+        let (x, y) = tile_under(to);
+        match self.tool {
+            Tool::Brush => edit::paint_line(&mut self.history, world, (from.x, from.y), (to.x, to.y), self.size, Some(self.terrain)),
+            Tool::Eraser => edit::paint_line(&mut self.history, world, (from.x, from.y), (to.x, to.y), self.size, None),
+            Tool::Fill => {}
+            Tool::Place => {
+                edit::place(&mut self.history, world, x, y, self.prop);
+            }
+            Tool::Remove => {
+                edit::remove(&mut self.history, world, x, y);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn field() -> World {
+        let mut world = World::new();
+        for y in 0..10 {
+            for x in 0..10 {
+                world.set_terrain(x, y, Terrain::Grass);
+            }
+        }
+        world
+    }
+
+    fn count(world: &World, terrain: Terrain) -> usize {
+        (0..10).flat_map(|y| (0..10).map(move |x| (x, y))).filter(|&(x, y)| world.terrain(x, y) == Some(terrain)).count()
+    }
+
+    #[test]
+    fn press_drag_release_is_one_undo() {
+        let (mut world, mut editor) = (field(), MapEditor::new());
+        editor.terrain = Terrain::Dirt;
+        editor.press(&mut world, Vec2::new(1.5, 1.5));
+        editor.drag(&mut world, Vec2::new(5.5, 1.5));
+        editor.drag(&mut world, Vec2::new(5.5, 6.5));
+        editor.release();
+        assert_eq!(count(&world, Terrain::Dirt), 10);
+        assert!(editor.undo(&mut world));
+        assert_eq!(count(&world, Terrain::Dirt), 0);
+        assert!(!editor.undo(&mut world));
+        assert!(editor.redo(&mut world));
+        assert_eq!(count(&world, Terrain::Dirt), 10);
+    }
+
+    #[test]
+    fn the_footprint_is_what_a_press_changes() {
+        for (tool, size) in [(Tool::Brush, 1), (Tool::Brush, 4), (Tool::Eraser, 5), (Tool::Fill, 3), (Tool::Place, 7)] {
+            let (mut world, mut editor) = (field(), MapEditor::new());
+            (editor.tool, editor.size, editor.terrain) = (tool, size, Terrain::Sand);
+            let at = Vec2::new(4.3, 5.8);
+            let footprint = editor.footprint(at);
+            let before: Vec<_> = (0..10).flat_map(|y| (0..10).map(move |x| (x, y))).map(|(x, y)| world.tile(x, y)).collect();
+            editor.press(&mut world, at);
+            editor.release();
+            if tool == Tool::Fill {
+                // A flood goes as far as the ground does; it starts under the pointer.
+                assert_eq!(footprint, vec![(4, 5)]);
+                assert_eq!(count(&world, Terrain::Sand), 100);
+                continue;
+            }
+            for y in 0..10 {
+                for x in 0..10 {
+                    let changed = world.tile(x, y) != before[(y * 10 + x) as usize];
+                    assert_eq!(changed, footprint.contains(&(x, y)), "{tool:?} size {size} at tile ({x}, {y})");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_drag_with_no_press_does_nothing() {
+        let (mut world, mut editor) = (field(), MapEditor::new());
+        editor.terrain = Terrain::Water;
+        editor.drag(&mut world, Vec2::new(3.5, 3.5));
+        editor.release();
+        assert_eq!(count(&world, Terrain::Water), 0);
+        assert!(!editor.history.can_undo());
+    }
+
+    #[test]
+    fn the_fill_does_not_follow_a_drag() {
+        let (mut world, mut editor) = (field(), MapEditor::new());
+        world.set_terrain(5, 5, Terrain::Water);
+        (editor.tool, editor.terrain) = (Tool::Fill, Terrain::Sand);
+        editor.press(&mut world, Vec2::new(0.5, 0.5));
+        editor.drag(&mut world, Vec2::new(5.5, 5.5));
+        editor.release();
+        assert_eq!(world.terrain(5, 5), Some(Terrain::Water), "the pond the drag crossed is not flooded");
+        assert_eq!(count(&world, Terrain::Sand), 99);
+    }
+
+    #[test]
+    fn place_and_remove_work_tile_by_tile_along_a_drag() {
+        let (mut world, mut editor) = (field(), MapEditor::new());
+        (editor.tool, editor.prop) = (Tool::Place, PropKind::Rock);
+        editor.press(&mut world, Vec2::new(2.5, 2.5));
+        editor.drag(&mut world, Vec2::new(3.5, 2.5));
+        editor.release();
+        assert_eq!(world.props_in(0, 0, 10, 10).count(), 2);
+        editor.tool = Tool::Remove;
+        editor.press(&mut world, Vec2::new(2.5, 2.5));
+        editor.release();
+        assert_eq!(world.props_in(0, 0, 10, 10).count(), 1);
+        // Two strokes, two undos.
+        editor.undo(&mut world);
+        editor.undo(&mut world);
+        assert_eq!(world.props_in(0, 0, 10, 10).count(), 0);
+    }
+
+    #[test]
+    fn undo_mid_stroke_ends_the_stroke() {
+        let (mut world, mut editor) = (field(), MapEditor::new());
+        editor.terrain = Terrain::Dirt;
+        editor.press(&mut world, Vec2::new(1.5, 1.5));
+        assert!(editor.undo(&mut world));
+        assert!(!editor.stroking());
+        // The button is still down, but the stroke is over: no more paint.
+        editor.drag(&mut world, Vec2::new(8.5, 8.5));
+        assert_eq!(count(&world, Terrain::Dirt), 0);
+    }
+}

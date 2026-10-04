@@ -93,13 +93,15 @@ pub struct SpriteId(u32);
 pub struct SpriteSet {
     pub sheet: Sheet,
     sprites: Vec<Sprite>,
+    /// Each sprite cut out on its own, as it was drawn: for the interface.
+    pictures: Vec<Image>,
     names: HashMap<String, SpriteId>,
 }
 
 impl SpriteSet {
     /// No sprites at all: what the game runs with when loading failed.
     pub fn empty() -> SpriteSet {
-        SpriteSet { sheet: Sheet::empty(), sprites: Vec::new(), names: HashMap::new() }
+        SpriteSet { sheet: Sheet::empty(), sprites: Vec::new(), pictures: Vec::new(), names: HashMap::new() }
     }
 
     pub fn id(&self, name: &str) -> Option<SpriteId> {
@@ -108,6 +110,11 @@ impl SpriteSet {
 
     pub fn get(&self, id: SpriteId) -> &Sprite {
         &self.sprites[id.0 as usize]
+    }
+
+    /// The sprite as a picture of its own.
+    pub fn picture(&self, id: SpriteId) -> &Image {
+        &self.pictures[id.0 as usize]
     }
 
     pub fn len(&self) -> usize {
@@ -147,9 +154,10 @@ impl SpriteSet {
             sources.push(Source { image, rect });
         }
         let (sheet, places) = atlas::build(&sources).ok_or("a sprite is too wide for the sheet")?;
+        let pictures = sources.iter().map(|s| s.image.crop(s.rect[0], s.rect[1], s.rect[2], s.rect[3])).collect();
 
         let (sheet_w, sheet_h) = (sheet.width as f64, sheet.height as f64);
-        let mut set = SpriteSet { sheet, sprites: Vec::new(), names: HashMap::new() };
+        let mut set = SpriteSet { sheet, sprites: Vec::new(), pictures, names: HashMap::new() };
         for ((def, source), &(x, y)) in manifest.sprites.iter().zip(&sources).zip(&places) {
             let (x, y, w, h) = (x as f64, y as f64, source.rect[2] as f64, source.rect[3] as f64);
             let id = SpriteId(set.sprites.len() as u32);
@@ -225,6 +233,9 @@ anchor = [4.5, 6]
         let (x, y) = ((tree.uv[0] * w).round() as u32, (tree.uv[1] * h).round() as u32);
         let at = ((y * set.sheet.width + x) * 4) as usize;
         assert_eq!(set.sheet.levels[0][at..at + 4], [10, 20, 30, 255]);
+        // Its own picture is the same pixels, cut out.
+        let picture = set.picture(set.id("tree").unwrap());
+        assert_eq!((picture.width, picture.height, picture.pixel(0, 0)), (40, 60, [10, 20, 30, 255]));
         // A sprite with no rect is its whole picture.
         assert_eq!(set.get(set.id("tuft").unwrap()).size, Vec2::new(0.04, 0.04));
         assert_eq!(set.id("goblin"), None);

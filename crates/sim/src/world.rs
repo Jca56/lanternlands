@@ -4,23 +4,42 @@
 //! grows east and y grows south. A tile that was never set is void:
 //! there is no ground there at all.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::terrain::Terrain;
 
 /// Tiles along one side of a chunk.
 pub const CHUNK: i32 = 32;
-const AREA: usize = (CHUNK * CHUNK) as usize;
-const VOID: u8 = u8::MAX;
+pub(crate) const AREA: usize = (CHUNK * CHUNK) as usize;
+pub(crate) const VOID: u8 = u8::MAX;
 
-/// What a prop is. Placeholders for the test map: objects get their
-/// real definitions from data once the editor exists.
+/// What a prop is. Placeholders for now: objects get their real
+/// definitions from data when they start to do things.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PropKind {
     Tree,
     Rock,
     HerbPurple,
     HerbCyan,
+}
+
+impl PropKind {
+    pub const ALL: [PropKind; 4] = [PropKind::Tree, PropKind::Rock, PropKind::HerbPurple, PropKind::HerbCyan];
+
+    /// What it is called in a map file. Never change one: saved maps
+    /// hold these.
+    pub const fn name(self) -> &'static str {
+        match self {
+            PropKind::Tree => "tree",
+            PropKind::Rock => "rock",
+            PropKind::HerbPurple => "herb_purple",
+            PropKind::HerbCyan => "herb_cyan",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<PropKind> {
+        PropKind::ALL.into_iter().find(|k| k.name() == name)
+    }
 }
 
 /// Something standing on a tile.
@@ -31,15 +50,28 @@ pub struct Prop {
     pub y: i32,
 }
 
-struct Chunk {
+/// Everything about one tile: its ground, and what stands on it. No
+/// ground means nothing stands there either.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Tile {
+    pub terrain: Option<Terrain>,
+    pub prop: Option<PropKind>,
+}
+
+pub(crate) struct Chunk {
     /// A terrain's rank per tile, row by row, or [`VOID`].
-    tiles: Box<[u8; AREA]>,
-    props: Vec<Prop>,
+    pub(crate) tiles: Box<[u8; AREA]>,
+    pub(crate) props: Vec<Prop>,
 }
 
 impl Chunk {
-    fn new() -> Chunk {
+    pub(crate) fn new() -> Chunk {
         Chunk { tiles: Box::new([VOID; AREA]), props: Vec::new() }
+    }
+
+    /// No ground anywhere and nothing standing: not worth keeping.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.props.is_empty() && self.tiles.iter().all(|&t| t == VOID)
     }
 }
 
@@ -52,12 +84,19 @@ fn locate(x: i32, y: i32) -> ((i32, i32), usize) {
 
 #[derive(Default)]
 pub struct World {
-    chunks: HashMap<(i32, i32), Chunk>,
+    pub(crate) chunks: HashMap<(i32, i32), Chunk>,
+    /// Chunks changed since the world was last loaded or saved.
+    pub(crate) dirty: BTreeSet<(i32, i32)>,
 }
 
 impl World {
     pub fn new() -> World {
         World::default()
+    }
+
+    /// Whether anything changed since the world was last loaded or saved.
+    pub fn is_dirty(&self) -> bool {
+        !self.dirty.is_empty()
     }
 
     /// The ground at a tile; `None` where there is none.
@@ -69,6 +108,7 @@ impl World {
     pub fn set_terrain(&mut self, x: i32, y: i32, terrain: Terrain) {
         let (key, index) = locate(x, y);
         self.chunks.entry(key).or_insert_with(Chunk::new).tiles[index] = terrain.rank();
+        self.dirty.insert(key);
     }
 
     /// Take a tile's ground away, and whatever stood on it.
@@ -77,6 +117,7 @@ impl World {
         if let Some(chunk) = self.chunks.get_mut(&key) {
             chunk.tiles[index] = VOID;
             chunk.props.retain(|p| (p.x, p.y) != (x, y));
+            self.dirty.insert(key);
         }
     }
 
@@ -93,6 +134,7 @@ impl World {
         }
         let (key, _) = locate(x, y);
         self.chunks.get_mut(&key).expect("the tile has ground").props.push(Prop { kind, x, y });
+        self.dirty.insert(key);
         true
     }
 
@@ -100,7 +142,28 @@ impl World {
         let (key, _) = locate(x, y);
         let props = &mut self.chunks.get_mut(&key)?.props;
         let at = props.iter().position(|p| (p.x, p.y) == (x, y))?;
+        self.dirty.insert(key);
         Some(props.swap_remove(at))
+    }
+
+    /// Everything about a tile at once.
+    pub fn tile(&self, x: i32, y: i32) -> Tile {
+        Tile { terrain: self.terrain(x, y), prop: self.prop_at(x, y).map(|p| p.kind) }
+    }
+
+    /// Make a tile exactly `tile`. With no ground, nothing stands on it,
+    /// whatever `tile.prop` says.
+    pub fn set_tile(&mut self, x: i32, y: i32, tile: Tile) {
+        let Some(terrain) = tile.terrain else {
+            return self.clear_tile(x, y);
+        };
+        self.set_terrain(x, y, terrain);
+        if self.prop_at(x, y).map(|p| p.kind) != tile.prop {
+            self.remove_prop(x, y);
+            if let Some(kind) = tile.prop {
+                self.place_prop(kind, x, y);
+            }
+        }
     }
 
     /// Every prop on the tiles from `(x0, y0)` up to, not including,
@@ -196,5 +259,54 @@ mod tests {
     #[test]
     fn an_empty_world_has_no_bounds() {
         assert_eq!(World::new().bounds(), None);
+    }
+
+    #[test]
+    fn set_tile_makes_the_tile_exactly_what_was_asked() {
+        let mut world = World::new();
+        let tree_on_grass = Tile { terrain: Some(Terrain::Grass), prop: Some(PropKind::Tree) };
+        world.set_tile(2, 2, tree_on_grass);
+        assert_eq!(world.tile(2, 2), tree_on_grass);
+        // New ground under the same prop, then another prop, then none.
+        for tile in [Tile { terrain: Some(Terrain::Sand), prop: Some(PropKind::Tree) }, Tile { terrain: Some(Terrain::Sand), prop: Some(PropKind::Rock) }, Tile { terrain: Some(Terrain::Sand), prop: None }] {
+            world.set_tile(2, 2, tile);
+            assert_eq!(world.tile(2, 2), tile);
+        }
+        // No ground: nothing can stand there.
+        world.set_tile(2, 2, Tile { terrain: None, prop: Some(PropKind::Tree) });
+        assert_eq!(world.tile(2, 2), Tile::default());
+    }
+
+    #[test]
+    fn every_change_marks_the_world_dirty_and_looking_does_not() {
+        let mut world = World::new();
+        assert!(!world.is_dirty());
+        let _ = (world.terrain(0, 0), world.tile(0, 0), world.prop_at(0, 0), world.bounds());
+        world.clear_tile(0, 0);
+        assert!(!world.is_dirty(), "clearing what was never there changes nothing");
+        world.set_terrain(0, 0, Terrain::Grass);
+        assert!(world.is_dirty());
+        let changes: [fn(&mut World); 3] = [
+            |w| {
+                w.place_prop(PropKind::Tree, 0, 0);
+            },
+            |w| {
+                w.remove_prop(0, 0);
+            },
+            |w| w.clear_tile(0, 0),
+        ];
+        for change in changes {
+            world.dirty.clear();
+            change(&mut world);
+            assert!(world.is_dirty());
+        }
+    }
+
+    #[test]
+    fn prop_names_round_trip() {
+        for kind in PropKind::ALL {
+            assert_eq!(PropKind::from_name(kind.name()), Some(kind));
+        }
+        assert_eq!(PropKind::from_name("dragon"), None);
     }
 }

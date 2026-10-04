@@ -5,17 +5,19 @@ mod app;
 mod assets;
 mod atlas;
 mod camera;
+mod editor;
 mod palette;
+mod panel;
 mod render;
 mod scene;
 
 use lntrn_app::{AppConfig, run};
 use lntrn_ui::Shell;
 
-use app::{Editor, Game};
+use app::{Game, View};
 
 fn main() {
     // No title bar: the world has the whole window.
     let config = AppConfig { title: "Explore the World".into(), app_id: "explore-the-world".into(), title_bar: false, ..AppConfig::default() };
-    run(config, Game::new(), Shell::new(Editor::World));
+    run(config, Game::new(), Shell::new(View::World));
 }

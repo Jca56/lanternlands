@@ -25,7 +25,6 @@ impl Camera {
         TILE_PX * self.zoom * scale
     }
 
-    #[cfg(test)]
     pub fn to_screen(self, world: Vec2, view: Rect, scale: f64) -> Vec2 {
         view.center() + (world - self.center) * self.tile_px(scale)
     }
