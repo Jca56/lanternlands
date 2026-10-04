@@ -1,6 +1,6 @@
 //! Whole frames drawn with no window: the world pass and the interface
 //! over it, exactly as `lntrn-app` puts them together, read back as a
-//! picture. Set `EXPLORE_RENDER_OUT` to a folder to keep each as a PNG.
+//! picture. Set `LANTERNLANDS_RENDER_OUT` to a folder to keep each as a PNG.
 
 use lntrn_image::Image;
 use lntrn_render::{AtlasTexture, Pass2d, Readback, RenderGraph, TexturePool, clear_pass};
@@ -51,7 +51,7 @@ pub(super) fn snap(name: &str, h: &mut Harness, shell: &mut Shell<Game>, game: &
     let read = Readback::begin(gpu, &mut encoder, &texture, true).expect("readable");
     gpu.queue.submit([encoder.finish()]);
     let image = read.finish(gpu).expect("the pixels come back");
-    if let Some(dir) = std::env::var_os("EXPLORE_RENDER_OUT") {
+    if let Some(dir) = std::env::var_os("LANTERNLANDS_RENDER_OUT") {
         std::fs::write(Path::new(&dir).join(format!("{name}.png")), lntrn_image::encode_png(&image)).expect("the picture is written");
     }
     Some(image)

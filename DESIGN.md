@@ -1,4 +1,4 @@
-# Explore the World — Design
+# Lanternlands — Design
 
 Working title (from the folder name). Claude's design doc; Alva's scratchpad is `Notes.md` (read-only for Claude, git-ignored).
 
@@ -50,13 +50,14 @@ Locked with Alva on 2026-10-04.
 | First potions | Healing, Strength, Stoneskin, Regeneration |
 | Out | Woodcutting, Firemaking, Cooking-as-healing, rune-based magic |
 | Setting | Classic medieval fantasy |
+| Name | **Lanternlands** (Alva, 2026-10-04). Lantern-themed because a lantern mechanic is wanted in the game eventually. Before that the working title was "Explore the World", which the project folder may still be called. The repository is `github.com/Jca56/lanternlands` |
 | Content | Designed together: Claude proposes here, Alva approves, then it gets built |
 | Death | Gravestone run-back: respawn in the last town with equipped gear; the inventory waits in a gravestone where you died. The grave is permanent (no timer), but there is only one: die again before reaching it and the old grave crumbles with its items |
 | Renderer | Our own wgpu sprite-batch pass, plugged in through `AppHost::render`; Lantern UI 2 draws the HUD on top |
 | Code layout | Cargo workspace: a pure-std headless simulation crate (ticks, world, pathfinding, combat, skills) + the game binary (rendering, UI, editor) |
 | Screen | The world fills the window; the HUD floats over it (hotbar along the bottom, vitals in a corner, big panels open on demand) |
 | Saving | Always, by itself: there is no save button. What is earned is saved the moment it is got, the rest every ten seconds while anything is happening, and again on leaving |
-| Characters | Three slots, each a named character, picked on a title screen. Saves live in `~/.lantern/save/explore-the-world/` (a new Lantern convention Alva agreed to) |
+| Characters | Three slots, each a named character, picked on a title screen. Saves live in `~/.lantern/save/lanternlands/` (a new Lantern convention Alva agreed to) |
 | Title screen | A painting drawn in Lantern Studio behind the menu; the game's name is written over it as text, since the name is not final |
 | Travel | One brisk speed, no stamina or run energy. Faster travel (mounts, teleports) can be unlocked later as a reward |
 | Inventory | 30 slots, 5 across and 6 down (taller than wide); materials stack, gear does not. Bank in towns |
@@ -221,7 +222,7 @@ Muted, warm, old-school. In the test sheet B is the A panel pushed through two a
 
 Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 
-- **Layout.** A Cargo workspace: `crates/sim` (pure std: terrain, the chunked world, props and markers, pathfinding, the ticking player, the edit tools and their history, map files, a test map) and `crates/game` (the binary `explore-the-world`: camera, sprite sheet packer, scene builder, the wgpu passes, the map editor and its panel, the Lantern UI 2 host). Art sources in `art/`, what the game loads in `assets/`.
+- **Layout.** A Cargo workspace: `crates/sim` (pure std: terrain, the chunked world, props and markers, pathfinding, the ticking player, the edit tools and their history, map files, a test map) and `crates/game` (the binary `lanternlands`: camera, sprite sheet packer, scene builder, the wgpu passes, the map editor and its panel, the Lantern UI 2 host). Art sources in `art/`, what the game loads in `assets/`.
 - **Window.** Lantern UI 2 by path, unmodified. One area with no header and no title bar; the world fills it and the interface will draw over it.
 - **World pass.** The world is drawn into a picture of its own that holds the art's sRGB numbers and blends them as they are, the way Lantern Studio composites, then that picture is put on the window. Blending in linear light instead made shadows visibly paler than the approved art.
 - **Ground.** Drawn on the dual grid: one quad per square between four tile centres. Kinds stack grass < dirt < sand < water; a layer covers its own tiles and those of every kind above it, so no gap opens where two meet. The shader shapes each quad from which corners it covers, with corners rounded to half a tile and a rim just inside the edge. There is no transition art.
@@ -248,7 +249,7 @@ Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 - **More drawings.** The player's sheet gained a wind-up and a strike for each facing; a spent rock is the rock without its copper; items have 128 px icons in `assets/items/` (sources in `art/items/`).
 - **Characters and saves.** The game opens on a title screen (`title.rs`): the painting `assets/title/title-01.png` (source in `art/title/`) cut to fill the window, the game's name, three character slots and Quit. An empty slot asks for a name (1 to 16 letters) and starts a new character; a held one continues; Delete asks first. A save (`sim::save`) is one small binary file per character, `character-N.save`, in sections like a chunk file's, with skills and items by name: who they are and how long they have been played, where they stand, their skills and bag, the nodes they left spent with the time each has left, and their grave. Health and monsters are not saved: both come back whole. It is written whole and then moved into place. Resuming on a map that has changed stands the player as near where they were as they can be and forgets nodes that are gone. Esc goes back to the title screen. The map belongs to no character: all three play on the same one.
 - **Controls for now.** Click to walk, to work a rock, to fight a monster, to use a furnace or an anvil, or to open the grave. 1 to 6 for the hotbar; I, K and G for the bag, the skills and the gear. Esc for the title screen. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
-- **How it is checked.** 350 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels, the bag, a fight and a grave can be looked at and their pixels checked. Fights are played through end to end the same way: a goblin is put beside the player and time is let pass.
+- **How it is checked.** 350 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `LANTERNLANDS_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels, the bag, a fight and a grave can be looked at and their pixels checked. Fights are played through end to end the same way: a goblin is put beside the player and time is let pass.
 
 ### Calls Claude made, Alva's to overrule
 
@@ -329,7 +330,7 @@ Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 - Where assets live for a deployed binary (it finds them beside itself, else in the source tree)
 - Ground edges: keep the shader's rounded steps, or hand-drawn transitions?
 - Audio
-- Real name for the game
+- The lantern mechanic: what the lantern does (not designed yet)
 
 ## Milestones (proposal)
 

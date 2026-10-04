@@ -45,7 +45,7 @@ const DELETE: &str = "title.delete";
 
 /// The game's name to the window system, and its folder under
 /// Lantern's `save/`.
-pub const APP_ID: &str = "explore-the-world";
+pub const APP_ID: &str = "lanternlands";
 /// While playing, the game is saved at least this often, in seconds,
 /// if anything has happened.
 const AUTOSAVE_EVERY: f64 = 10.0;
@@ -321,7 +321,7 @@ impl Host for Game {
     }
 
     fn title(&self) -> String {
-        "Explore the World".to_owned()
+        "Lanternlands".to_owned()
     }
 
     fn paints_body(&self, view: View) -> bool {

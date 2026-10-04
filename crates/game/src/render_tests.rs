@@ -2,7 +2,7 @@
 //! window into a picture, and that picture's pixels are compared with
 //! the palette and with colours read off the approved style sheet.
 //!
-//! Set `EXPLORE_RENDER_OUT` to a folder to keep each picture as a PNG.
+//! Set `LANTERNLANDS_RENDER_OUT` to a folder to keep each picture as a PNG.
 
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -100,7 +100,7 @@ fn shoot_all(name: &str, center: Vec2, zoom: f64, sprites: bool, extras: impl Fn
     gpu.queue.submit([encoder.finish()]);
     let [picture, window] = reads.map(|read| read.finish(gpu).expect("the pixels come back"));
 
-    if let Some(dir) = std::env::var_os("EXPLORE_RENDER_OUT") {
+    if let Some(dir) = std::env::var_os("LANTERNLANDS_RENDER_OUT") {
         let path = Path::new(&dir).join(format!("{name}.png"));
         std::fs::write(&path, lntrn_image::encode_png(&picture)).expect("the picture is written");
     }

@@ -7,7 +7,7 @@ use lntrn_ui::{ImageHandle, Sense, Ui};
 use crate::saves::SLOTS;
 
 /// What the game is called, for now.
-pub const GAME_NAME: &str = "Explore the World";
+pub const GAME_NAME: &str = "Lanternlands";
 /// The longest a character's name may be, in letters.
 pub const NAME_MAX: usize = 16;
 

@@ -6,7 +6,7 @@ authors.workspace = true
 description = "The window, the renderer and the interface over the simulation"
 
 [[bin]]
-name = "explore-the-world"
+name = "lanternlands"
 path = "src/main.rs"
 
 [dependencies]

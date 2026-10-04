@@ -1,5 +1,5 @@
 //! Whole frames of a fight, a grave and the editor's goblins, drawn
-//! with no window. Set `EXPLORE_RENDER_OUT` to a folder to keep them.
+//! with no window. Set `LANTERNLANDS_RENDER_OUT` to a folder to keep them.
 
 use super::fights::{body_of, killed, until, with_goblin};
 use super::frame::{GRASS, body, count, snap};

@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn the_default_folder_is_under_lanterns_save_folder() {
-        let dir = Saves::default_dir("explore-the-world");
-        assert!(dir.ends_with("save/explore-the-world"), "{}", dir.display());
+        let dir = Saves::default_dir("lanternlands");
+        assert!(dir.ends_with("save/lanternlands"), "{}", dir.display());
     }
 }

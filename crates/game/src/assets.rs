@@ -12,10 +12,10 @@ use crate::atlas::{self, Sheet, Source};
 
 pub const MANIFEST: &str = "sprites.toml";
 
-/// Where the assets are: `EXPLORE_ASSETS` if it is set, else an `assets`
+/// Where the assets are: `LANTERNLANDS_ASSETS` if it is set, else an `assets`
 /// folder beside the binary, else the one in the source tree.
 pub fn assets_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("EXPLORE_ASSETS") {
+    if let Some(dir) = std::env::var_os("LANTERNLANDS_ASSETS") {
         return dir.into();
     }
     let beside = std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.join("assets")));
