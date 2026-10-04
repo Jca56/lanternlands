@@ -2,7 +2,7 @@
 
 Working title (from the folder name). Claude's design doc; Alva's scratchpad is `Notes.md` (read-only for Claude, git-ignored).
 
-Status: **design phase**, no code yet.
+Status: design agreed for the core; milestone 1 (window, tile renderer, camera) is built.
 
 ## Pitch
 
@@ -37,11 +37,15 @@ Locked with Alva on 2026-10-04.
 | Out | Woodcutting, Firemaking, Cooking-as-healing, rune-based magic |
 | Setting | Classic medieval fantasy |
 | Content | Designed together: Claude proposes here, Alva approves, then it gets built |
-| Death | Gravestone run-back: respawn in the last town with equipped gear; the inventory waits in a gravestone where you died |
+| Death | Gravestone run-back: respawn in the last town with equipped gear; the inventory waits in a gravestone where you died. The grave is permanent (no timer), but there is only one: die again before reaching it and the old grave crumbles with its items |
+| Renderer | Our own wgpu sprite-batch pass, plugged in through `AppHost::render`; Lantern UI 2 draws the HUD on top |
+| Code layout | Cargo workspace: a pure-std headless simulation crate (ticks, world, pathfinding, combat, skills) + the game binary (rendering, UI, editor) |
+| Screen | The world fills the window; the HUD floats over it (hotbar along the bottom, vitals in a corner, big panels open on demand) |
+| Travel | One brisk speed, no stamina or run energy. Faster travel (mounts, teleports) can be unlocked later as a reward |
 | Inventory | Fixed grid of slots; materials stack, gear does not. Bank in towns |
 | World layout | One seamless overworld streamed in chunks; dungeons, caves, and building interiors are separate maps entered through doors |
 
-## Skills (proposal, not yet approved)
+## Skills (approved 2026-10-04)
 
 | Group | Skill | Trained by |
 |---|---|---|
@@ -102,14 +106,40 @@ Muted, warm, old-school. In the test sheet B is the A panel pushed through two a
 | Flower, purple | `#b768b7` | | Gravestone | `#9a9795` |
 | Flower, cyan | `#61b1b4` | | Copper ore | `#c78246` / `#d49c63` |
 
+## How it is built
+
+Milestone 1, as of 2026-10-04.
+
+- **Layout.** A Cargo workspace: `crates/sim` (pure std: terrain, the chunked world, props, a test map) and `crates/game` (the binary `explore-the-world`: camera, sprite sheet packer, scene builder, the wgpu passes, the Lantern UI 2 host). Art sources in `art/`, what the game loads in `assets/`.
+- **Window.** Lantern UI 2 by path, unmodified. One area with no header and no title bar; the world fills it and the interface will draw over it.
+- **World pass.** The world is drawn into a picture of its own that holds the art's sRGB numbers and blends them as they are, the way Lantern Studio composites, then that picture is put on the window. Blending in linear light instead made shadows visibly paler than the approved art.
+- **Ground.** Drawn on the dual grid: one quad per square between four tile centres. Kinds stack grass < dirt < sand < water; a layer covers its own tiles and those of every kind above it, so no gap opens where two meet. The shader shapes each quad from which corners it covers, with corners rounded to half a tile and a rim just inside the edge. There is no transition art.
+- **Sprites.** Listed in `assets/sprites.toml` (file, rect, anchor). Art is 200 px per tile, twice the style sheet, so it stays sharp up to full zoom. Packed at startup into one sheet with smaller copies for zooming out; drawn back to front by where they stand.
+- **Decoration.** Grass tufts are scattered by a hash of the tile, on about one bare grass tile in five. They are not world data.
+- **Test map.** `sim::testmap` is a made-up 48 x 32 map to look at until the editor exists. Not content.
+- **Controls for now.** Wheel zooms about the pointer, middle-drag or arrows / WASD move the view, F11 fullscreen, Ctrl+Q quits.
+- **How it is checked.** 58 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs.
+
+### Calls Claude made, Alva's to overrule
+
+1. Ground edges are rounded by the shader rather than hand-drawn transition tiles. The tile grid shows as rounded steps on diagonals.
+2. The stacking order grass < dirt < sand < water.
+3. Diagonal neighbours of the same ground join through the corner, so a diagonal path is one path.
+4. Dirt and water have rims (from the style sheet); sand has none; grass has a dark green one only at the edge of the world.
+5. Where there is no ground it is the outline colour, `#271a1c`.
+6. Props stand with their anchor on the middle of their tile.
+7. A tile is 100 logical pixels at zoom 1; zoom runs 0.4 to 2.
+8. No title bar.
+
 ## Open questions
 
-- Gravestone details (timer or permanent? what happens if you die again before reaching it?)
 - Inventory size, bank size
-- Run / stamina
+- Travel speed in tiles per tick
 - Level cap and XP curve
 - Quests and NPC dialogue: when, and how deep
-- Tile size on screen and zoom (must be big and readable)
+- Tile size on screen and zoom: built as 100 logical px per tile, zoom 0.4 to 2; right once Alva has seen it?
+- Where assets live for a deployed binary (it finds them beside itself, else in the source tree)
+- Ground edges: keep the shader's rounded steps, or hand-drawn transitions?
 - Save system
 - Audio
 - Real name for the game
@@ -117,7 +147,7 @@ Muted, warm, old-school. In the test sheet B is the A panel pushed through two a
 ## Milestones (proposal)
 
 0. Art style test sheet (terrain, ore rock, herb, player, goblin) to lock the look, tile size, and palette. **Done 2026-10-04**: style approved, palette B Earthy
-1. Window, tile renderer, camera
+1. Window, tile renderer, camera. **Built 2026-10-04**, awaiting Alva's look
 2. Map editor: paint, place, save, load
 3. Tick simulation, click-to-move pathfinding
 4. Inventory, skills and XP, Mining nodes

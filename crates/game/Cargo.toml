@@ -1,0 +1,20 @@
+[package]
+name = "game"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "The window, the renderer and the interface over the simulation"
+
+[[bin]]
+name = "explore-the-world"
+path = "src/main.rs"
+
+[dependencies]
+sim.workspace = true
+lntrn-math.workspace = true
+lntrn-core.workspace = true
+lntrn-image.workspace = true
+lntrn-data.workspace = true
+lntrn-render.workspace = true
+lntrn-ui.workspace = true
+lntrn-app.workspace = true

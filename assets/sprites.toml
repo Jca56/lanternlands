@@ -1,0 +1,49 @@
+# Every sprite the game loads.
+#
+# file    the picture, inside this folder
+# rect    [x, y, width, height] of the sprite in that picture; leave it
+#         out when the sprite is the whole picture
+# anchor  the pixel, counted from the rect's top-left corner, that stands
+#         on the ground: the middle of the tile the sprite is on
+
+# How many of the art's pixels a tile is across.
+tile_px = 200
+
+[sprites.tree]
+file = "sprites/objects-01.png"
+rect = [4, 24, 392, 426]
+anchor = [196, 384]
+
+[sprites.rock]
+file = "sprites/objects-01.png"
+rect = [850, 186, 236, 216]
+anchor = [118, 186]
+
+[sprites.herb_purple]
+file = "sprites/objects-01.png"
+rect = [188, 622, 164, 168]
+anchor = [82, 146]
+
+[sprites.herb_cyan]
+file = "sprites/objects-01.png"
+rect = [268, 942, 164, 168]
+anchor = [82, 146]
+
+[sprites.gravestone]
+file = "sprites/objects-01.png"
+rect = [48, 970, 176, 176]
+anchor = [88, 146]
+
+[sprites.player]
+file = "sprites/objects-01.png"
+rect = [460, 656, 256, 308]
+anchor = [90, 276]
+
+[sprites.goblin]
+file = "sprites/objects-01.png"
+rect = [836, 580, 276, 248]
+anchor = [124, 220]
+
+[sprites.tuft]
+file = "sprites/tuft.png"
+anchor = [24, 32]
