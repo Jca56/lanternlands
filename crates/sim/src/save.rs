@@ -262,6 +262,9 @@ impl Sim {
             sim.worked.insert(node.at, Worked { left: node.left, back_at });
         }
         sim.settle_player();
+        // Whole, for the character they are: a new game's health was
+        // set before their skills were read.
+        sim.player.health = sim.max_health();
         sim
     }
 }

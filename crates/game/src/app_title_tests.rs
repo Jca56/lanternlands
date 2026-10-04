@@ -250,3 +250,22 @@ fn quit_on_the_title_screen_quits() {
     let at = h.rect_of(quit).expect("a Quit button").center();
     assert!(click(&mut h, &mut shell, &mut game, at).quit);
 }
+
+#[test]
+fn a_tougher_character_continues_at_their_own_full_health() {
+    let (mut h, mut shell, mut game) = opened("title_whole");
+    create(&mut h, &mut shell, &mut game, 0, "Tank");
+    game.sim.skills.set_xp(Skill::Vitality, sim::skills::xp_for_level(8));
+    let whole = game.sim.max_health();
+    assert!(whole > 20, "more than a new character has");
+    game.sim.player.health = whole;
+    game.exiting(Exit::Quit);
+
+    // After a restart, and after a trip to the title screen and back.
+    let (mut h, mut shell, mut again) = reopened(&game);
+    click_slot(&mut h, &mut shell, &mut again, 0);
+    assert_eq!((again.sim.player.health, again.sim.max_health()), (whole, whole));
+    key(&mut h, &mut shell, &mut again, Key::Escape, Modifiers::NONE);
+    click_slot(&mut h, &mut shell, &mut again, 0);
+    assert_eq!(again.sim.player.health, whole);
+}

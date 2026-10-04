@@ -167,13 +167,19 @@ fn the_player_and_the_monsters_come_back_whole() {
     let mut world = field();
     world.set_spawn(1, 8, Some(crate::monsters::MonsterKind::Goblin));
     let mut sim = Sim::new(world);
+    // Tougher than a new character, so whole is more than the health
+    // a new one starts with.
+    sim.skills.set_xp(Skill::Vitality, crate::skills::xp_for_level(8));
+    assert!(sim.max_health() > 20);
     sim.player.health = 3;
     sim.monsters[0].health = 1;
     let saved = sim.snapshot(&hero());
     let mut world = field();
     world.set_spawn(1, 8, Some(crate::monsters::MonsterKind::Goblin));
     let again = Sim::resume(world, &saved);
-    assert_eq!(again.player.health, again.max_health());
+    assert_eq!(again.max_health(), sim.max_health());
+    assert_eq!(again.player.health, again.max_health(), "whole for the character they are, not for a new one");
+    assert!(!again.waiting() || again.monsters.iter().any(|m| m.alive()), "with no health to mend");
     assert_eq!(again.monsters.len(), 1);
     assert_eq!(again.monsters[0].health, crate::monsters::MonsterKind::Goblin.stats().health);
 }
