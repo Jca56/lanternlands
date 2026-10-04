@@ -42,6 +42,9 @@ Locked with Alva on 2026-10-04.
 | Renderer | Our own wgpu sprite-batch pass, plugged in through `AppHost::render`; Lantern UI 2 draws the HUD on top |
 | Code layout | Cargo workspace: a pure-std headless simulation crate (ticks, world, pathfinding, combat, skills) + the game binary (rendering, UI, editor) |
 | Screen | The world fills the window; the HUD floats over it (hotbar along the bottom, vitals in a corner, big panels open on demand) |
+| Saving | Always, by itself: there is no save button. What is earned is saved the moment it is got, the rest every ten seconds while anything is happening, and again on leaving |
+| Characters | Three slots, each a named character, picked on a title screen. Saves live in `~/.lantern/save/explore-the-world/` (a new Lantern convention Alva agreed to) |
+| Title screen | A painting drawn in Lantern Studio behind the menu; the game's name is written over it as text, since the name is not final |
 | Travel | One brisk speed, no stamina or run energy. Faster travel (mounts, teleports) can be unlocked later as a reward |
 | Inventory | 30 slots, 5 across and 6 down (taller than wide); materials stack, gear does not. Bank in towns |
 | World layout | One seamless overworld streamed in chunks; dungeons, caves, and building interiors are separate maps entered through doors |
@@ -131,7 +134,7 @@ Muted, warm, old-school. In the test sheet B is the A panel pushed through two a
 
 ## How it is built
 
-Milestones 1 to 4, as of 2026-10-04.
+Milestones 1 to 4 and the save game, as of 2026-10-04.
 
 - **Layout.** A Cargo workspace: `crates/sim` (pure std: terrain, the chunked world, props and markers, pathfinding, the ticking player, the edit tools and their history, map files, a test map) and `crates/game` (the binary `explore-the-world`: camera, sprite sheet packer, scene builder, the wgpu passes, the map editor and its panel, the Lantern UI 2 host). Art sources in `art/`, what the game loads in `assets/`.
 - **Window.** Lantern UI 2 by path, unmodified. One area with no header and no title bar; the world fills it and the interface will draw over it.
@@ -149,8 +152,9 @@ Milestones 1 to 4, as of 2026-10-04.
 - **Skills, bag, nodes.** In `sim`: nine skills with their own experience (cap 50), a 30-slot bag (drawn 5 across, 6 down) where materials stack, and props that are nodes. Clicking a node walks the player beside it and sets them to work: a swing every few ticks, a seeded dice roll for each, experience and an item on a hit, and the node spent after it has given what it holds until its time is up. Walking off drops the work; a full bag stops it. The simulation reports what happened as events and the game decides how to show them.
 - **The interface while playing** (`hud.rs`): Skills and Bag buttons in the bottom-right corner (also K and I), panels that stand on them, what was just got floating up from the player, and what the game has to say (a level gained, a full bag) in big letters at the top. Lantern UI 2's own toasts are not used while playing: they land on the buttons.
 - **More drawings.** The player's sheet gained a wind-up and a strike for each facing; a spent rock is the rock without its copper; items have 128 px icons in `assets/items/` (sources in `art/items/`).
-- **Controls for now.** Click to walk, or to work a rock. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
-- **How it is checked.** 201 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels and the bag can be looked at and their pixels checked.
+- **Characters and saves.** The game opens on a title screen (`title.rs`): the painting `assets/title/title-01.png` (source in `art/title/`) cut to fill the window, the game's name, three character slots and Quit. An empty slot asks for a name (1 to 16 letters) and starts a new character; a held one continues; Delete asks first. A save (`sim::save`) is one small binary file per character, `character-N.save`, in sections like a chunk file's, with skills and items by name: who they are and how long they have been played, where they stand, their skills and bag, and the nodes they left spent with the time each has left. It is written whole and then moved into place. Resuming on a map that has changed stands the player as near where they were as they can be and forgets nodes that are gone. Esc goes back to the title screen. The map belongs to no character: all three play on the same one.
+- **Controls for now.** Click to walk, or to work a rock. Esc for the title screen. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
+- **How it is checked.** 234 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels and the bag can be looked at and their pixels checked.
 
 ### Calls Claude made, Alva's to overrule
 
@@ -172,13 +176,16 @@ Milestones 1 to 4, as of 2026-10-04.
 16. The first step after standing still starts at once instead of waiting for the next tick to come round. Nothing else ticks yet; when monsters do, whether a click waits for the tick is a feel question to revisit.
 17. The game stands still while the editor is open. Closing it stops the player and moves them off any ground that can no longer be stood on.
 18. While playing the view cannot be moved off the player.
-19. Where the player is is not saved yet: every launch starts at the start.
-20. Nothing the player earns is saved yet: the bag and the skills start empty every launch, like their position.
+19. Esc leaves for the title screen at once, without asking: nothing can be lost, since it is all saved.
+20. Spent rocks are each character's own: one character emptying a rock does not empty it for another.
 21. A node can be worked from any of the eight tiles around it.
 22. At work the player winds up and strikes every tick, though the roll comes only when a swing is done.
 23. The game says things itself, at the top of the screen, rather than through Lantern UI 2's toasts.
 24. The dice are seeded from the clock when the game starts.
-25. Props are still the four placeholder kinds; the rock is a copper rock. They become data-defined objects when they start to do things (mining, picking).
+25. A character's name is 1 to 16 letters.
+26. The title painting shows only what is in the game (the hero, trees, a copper rock, herbs, a path, a pond, hills and mountains): no castle or other place that has not been designed.
+27. Time played counts only while playing, not on the title screen or in the map editor.
+28. Props are still the four placeholder kinds; the rock is a copper rock. They become data-defined objects when they start to do things (mining, picking).
 
 ## Open questions
 
@@ -188,7 +195,6 @@ Milestones 1 to 4, as of 2026-10-04.
 - Quests and NPC dialogue: when, and how deep
 - Where assets live for a deployed binary (it finds them beside itself, else in the source tree)
 - Ground edges: keep the shader's rounded steps, or hand-drawn transitions?
-- Save system
 - Audio
 - Real name for the game
 
@@ -199,6 +205,7 @@ Milestones 1 to 4, as of 2026-10-04.
 2. Map editor: paint, place, save, load. **Done 2026-10-04**: Alva used it ("that's so cool!"), asked for a move tool, and that "works great"
 3. Tick simulation, click-to-move pathfinding. **Done 2026-10-04** with full walk cycles: Alva "spent so much time just walking around"
 4. Inventory, skills and XP, Mining nodes. **Done 2026-10-04**: Alva played it ("it works!"), asked for the bag to be 5 across and 6 down, and does not like the stock progress bars in the Skills panel (to be redrawn later)
+4b. Save game: title screen, three named characters, autosave. **Done 2026-10-04**: Alva tried it ("It works!")
 5. Combat: melee auto-attack, abilities, monsters, drops, death
 6. Smithing and equipment
 7. Herbalism, Alchemy, potions

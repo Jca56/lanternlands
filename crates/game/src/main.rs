@@ -11,7 +11,9 @@ mod hud;
 mod palette;
 mod panel;
 mod render;
+mod saves;
 mod scene;
+mod title;
 
 use lntrn_app::{AppConfig, run};
 use lntrn_ui::Shell;
@@ -20,6 +22,6 @@ use app::{Game, View};
 
 fn main() {
     // No title bar: the world has the whole window.
-    let config = AppConfig { title: "Explore the World".into(), app_id: "explore-the-world".into(), title_bar: false, ..AppConfig::default() };
+    let config = AppConfig { title: title::GAME_NAME.into(), app_id: app::APP_ID.into(), title_bar: false, ..AppConfig::default() };
     run(config, Game::new(), Shell::new(View::World));
 }

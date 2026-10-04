@@ -14,6 +14,7 @@ sim.workspace = true
 lntrn-math.workspace = true
 lntrn-core.workspace = true
 lntrn-image.workspace = true
+lntrn-sys.workspace = true
 lntrn-data.workspace = true
 lntrn-render.workspace = true
 lntrn-ui.workspace = true

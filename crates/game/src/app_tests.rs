@@ -3,7 +3,7 @@
 
 use lntrn_ui::testing::Harness;
 use lntrn_ui::{Modifiers, ShellOutput, WidgetId};
-use sim::{Item, Marker, Skill, Terrain};
+use sim::{Character, Item, Marker, Skill, Terrain};
 
 use super::*;
 use crate::anim::Pose;
@@ -21,16 +21,25 @@ fn turn(h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game) -> ShellOutpu
     out
 }
 
-/// The game on a copy of the test map in a scratch folder of its own.
-fn started(name: &str) -> (Harness, Shell<Game>, Game) {
+/// A fresh game on a copy of the test map and an empty save folder, in
+/// scratch folders of their own: on the title screen.
+fn opened(name: &str) -> (Harness, Shell<Game>, Game) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let map = root.join("target/tmp/game").join(name);
-    let _ = std::fs::remove_dir_all(&map);
-    sim::testmap::build().save(&map).expect("the map is written");
-    let mut game = Game::open(&root.join("assets"), map);
+    let scratch = root.join("target/tmp/game").join(name);
+    let _ = std::fs::remove_dir_all(&scratch);
+    sim::testmap::build().save(&scratch.join("map")).expect("the map is written");
+    let mut game = Game::open(&root.join("assets"), scratch.join("map"), scratch.join("saves"));
     let mut shell = Shell::new(View::World);
     shell.title_bar = false;
     let mut h = Harness::new(WINDOW.x, WINDOW.y);
+    turn(&mut h, &mut shell, &mut game);
+    (h, shell, game)
+}
+
+/// The same with a new character entered: playing.
+fn started(name: &str) -> (Harness, Shell<Game>, Game) {
+    let (mut h, mut shell, mut game) = opened(name);
+    game.enter(0, Character { name: "Tester".to_owned(), played: 0 }, None);
     turn(&mut h, &mut shell, &mut game);
     (h, shell, game)
 }
@@ -277,11 +286,11 @@ fn the_window_systems_close_asks_too() {
 #[test]
 fn a_map_that_does_not_load_says_so_and_starts_empty() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let map = root.join("target/tmp/game/broken");
-    let _ = std::fs::remove_dir_all(&map);
-    std::fs::create_dir_all(&map).unwrap();
-    std::fs::write(map.join("0_0.chunk"), b"not a chunk").unwrap();
-    let mut game = Game::open(&root.join("assets"), map);
+    let scratch = root.join("target/tmp/game/broken");
+    let _ = std::fs::remove_dir_all(&scratch);
+    std::fs::create_dir_all(scratch.join("map")).unwrap();
+    std::fs::write(scratch.join("map/0_0.chunk"), b"not a chunk").unwrap();
+    let mut game = Game::open(&root.join("assets"), scratch.join("map"), scratch.join("saves"));
     let mut shell = Shell::new(View::World);
     shell.title_bar = false;
     let mut h = Harness::new(WINDOW.x, WINDOW.y);
@@ -304,3 +313,6 @@ mod play;
 
 #[path = "app_frame_tests.rs"]
 mod frame;
+
+#[path = "app_title_tests.rs"]
+mod titles;

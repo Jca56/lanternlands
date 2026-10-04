@@ -56,10 +56,10 @@ pub enum Event {
 
 /// What is left in a node that has been worked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Worked {
-    left: u8,
+pub(crate) struct Worked {
+    pub(crate) left: u8,
     /// The tick a spent one is whole again.
-    back_at: Option<u64>,
+    pub(crate) back_at: Option<u64>,
 }
 
 impl Player {
@@ -99,7 +99,7 @@ pub struct Sim {
     pub ticks: u64,
     rng: Rng,
     /// Nodes that are not whole, by tile.
-    worked: HashMap<(i32, i32), Worked>,
+    pub(crate) worked: HashMap<(i32, i32), Worked>,
     events: Vec<Event>,
 }
 

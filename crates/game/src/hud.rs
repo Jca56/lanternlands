@@ -75,6 +75,11 @@ impl Hud {
         self.messages.drain(..extra);
     }
 
+    /// Say something at the top of the screen.
+    pub fn say(&mut self, text: &str, now: f64) {
+        self.messages.push(Line { text: text.to_owned(), born: now });
+    }
+
     /// Whether something here is moving, and so wants another frame.
     pub fn animating(&self, now: f64) -> bool {
         self.drops.iter().any(|d| now - d.born < DROP_LIFE) || self.messages.iter().any(|m| now - m.born < MESSAGE_LIFE)

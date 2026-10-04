@@ -4,14 +4,15 @@
 
 use std::path::{Path, PathBuf};
 
-use lntrn_app::{AppHost, RenderCx};
+use lntrn_app::{AppHost, Exit, RenderCx};
 use lntrn_core::{log_error, log_info};
 use lntrn_math::{Rect, Vec2};
 use lntrn_render::{Gpu, Images, TexDesc, wgpu};
 use lntrn_ui::keymap::CTX_WINDOW;
 use lntrn_ui::{Action, AreaCx, Axis, Dialog, Host, HostCx, Key, KeyConfig, KeyItem, KeyPress, Modifiers, Shell, ShellRequest, Trigger, Ui};
 use lntrn_image::Image;
-use sim::{Item, PropKind, Sim, TICK_SECONDS, World};
+use lntrn_ui::ImageHandle;
+use sim::{Character, Item, PropKind, Sim, TICK_SECONDS, World};
 
 use crate::anim::Facing;
 use crate::assets::{self, SpriteSet};
@@ -20,6 +21,8 @@ use crate::editor::MapEditor;
 use crate::hud::{Hud, ItemPictures};
 use crate::panel::{self, Asked, Pictures};
 use crate::render::WorldRenderer;
+use crate::saves::{SLOTS, Saves};
+use crate::title::Slot;
 use crate::scene::{Look, Scene};
 
 const FULLSCREEN: &str = "game.fullscreen";
@@ -32,9 +35,20 @@ const REDO: &str = "editor.redo";
 const SAVE: &str = "editor.save";
 const BAG: &str = "hud.bag";
 const SKILLS: &str = "hud.skills";
+const TITLE: &str = "game.title";
+const CREATE: &str = "title.create";
+const DELETE: &str = "title.delete";
+
+/// The game's name to the window system, and its folder under
+/// Lantern's `save/`.
+pub const APP_ID: &str = "explore-the-world";
+/// While playing, the game is saved at least this often, in seconds,
+/// if anything has happened.
+const AUTOSAVE_EVERY: f64 = 10.0;
 
 /// The map the game plays and the editor edits, inside the assets.
 const MAP: &str = "maps/overworld";
+const TITLE_PAINTING: &str = "title/title-01.png";
 
 /// How wide the editor's panel opens, in logical pixels.
 const PANEL_WIDTH: f64 = 400.0;
@@ -44,7 +58,35 @@ pub enum View {
     Editor,
 }
 
+/// What the window is showing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mode {
+    Title,
+    /// The character in `slot` is being played.
+    Playing { slot: usize },
+}
+
 pub struct Game {
+    mode: Mode,
+    saves: Saves,
+    /// What each slot holds, as the title screen shows it.
+    slots: [Slot; SLOTS],
+    /// The character in play, and how long they have been played, in
+    /// seconds.
+    character: Character,
+    played: f64,
+    /// Something happened since the game was last saved, at `saved_at`.
+    unsaved: bool,
+    saved_at: f64,
+    /// The slot a new character is being named for, and the name so far.
+    naming: Option<(usize, String)>,
+    /// The slot whose character is being asked about deleting.
+    deleting: Option<usize>,
+    /// The title painting: as loaded, and as the interface draws it.
+    title_image: Option<Image>,
+    title_picture: Option<ImageHandle>,
+    /// Seed the dice from the clock when a character is entered.
+    dice_from_clock: bool,
     sim: Sim,
     /// When the last frame was, to know how long this one took.
     clock: Option<f64>,
@@ -89,15 +131,15 @@ impl Game {
     pub fn new() -> Game {
         let assets = assets::assets_dir();
         let map = assets.join(MAP);
-        let mut game = Game::open(&assets, map);
-        // Different dice every time the game is run.
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
-        game.sim.reseed(now.map_or(0, |since| since.as_nanos() as u64));
+        let mut game = Game::open(&assets, map, Saves::default_dir(APP_ID));
+        // Different dice every time a character is played.
+        game.dice_from_clock = true;
         game
     }
 
-    /// The game with its sprites from `dir` and its map in `map`.
-    pub fn open(dir: &Path, map: PathBuf) -> Game {
+    /// The game with its sprites from `dir`, its map in `map` and its
+    /// characters in `saves`. It opens on the title screen.
+    pub fn open(dir: &Path, map: PathBuf, saves: PathBuf) -> Game {
         let sprites = match SpriteSet::load(dir) {
             Ok(set) => {
                 log_info!("loaded {} sprites from {}", set.len(), dir.display());
@@ -127,6 +169,9 @@ impl Game {
             let image = std::fs::read(&path).map_err(|e| e.to_string()).and_then(|bytes| lntrn_image::decode(&bytes).map_err(|e| e.to_string()));
             image.map_err(|e| log_error!("no picture for {}: {}: {e}", item.label(), path.display())).ok()
         });
+        let title_path = dir.join(TITLE_PAINTING);
+        let title_image = std::fs::read(&title_path).map_err(|e| e.to_string()).and_then(|bytes| lntrn_image::decode(&bytes).map_err(|e| e.to_string()));
+        let title_image = title_image.map_err(|e| log_error!("no title painting: {}: {e}", title_path.display())).ok();
         let sim = Sim::new(world);
         let (x, y) = sim.player.tile;
 
@@ -141,7 +186,20 @@ impl Game {
         bind(Key::Char('s'), Modifiers::CTRL, SAVE);
         bind(Key::Char('i'), Modifiers::NONE, BAG);
         bind(Key::Char('k'), Modifiers::NONE, SKILLS);
-        Game {
+        bind(Key::Escape, Modifiers::NONE, TITLE);
+        let mut game = Game {
+            mode: Mode::Title,
+            saves: Saves::new(saves),
+            slots: std::array::from_fn(|_| Slot::Empty),
+            character: Character::default(),
+            played: 0.0,
+            unsaved: false,
+            saved_at: 0.0,
+            naming: None,
+            deleting: None,
+            title_image,
+            title_picture: None,
+            dice_from_clock: false,
             sim,
             clock: None,
             phase: TICK_SECONDS,
@@ -166,6 +224,19 @@ impl Game {
             pictures: Pictures::default(),
             editing: false,
             panel_wanted: None,
+        };
+        game.refresh_slots();
+        game
+    }
+
+    /// Quit the game: at once, or after asking about map changes that
+    /// are not saved. The character in play is saved either way.
+    fn quit(&mut self, cx: &mut HostCx) {
+        self.autosave();
+        if self.sim.world.is_dirty() {
+            self.ask_before_quitting(cx);
+        } else {
+            cx.quit();
         }
     }
 
@@ -262,14 +333,18 @@ impl Host for Game {
     }
 
     fn run(&mut self, action: &Action, cx: &mut HostCx) {
+        let playing = self.mode != Mode::Title;
         match action.id.as_str() {
             FULLSCREEN => {
                 self.fullscreen = !self.fullscreen;
                 cx.request(ShellRequest::Fullscreen(self.fullscreen));
             }
-            EDIT => self.panel_wanted = Some(!self.editing),
-            BAG if !self.editing => self.hud.bag_open = !self.hud.bag_open,
-            SKILLS if !self.editing => self.hud.skills_open = !self.hud.skills_open,
+            EDIT if playing => self.panel_wanted = Some(!self.editing),
+            BAG if playing && !self.editing => self.hud.bag_open = !self.hud.bag_open,
+            SKILLS if playing && !self.editing => self.hud.skills_open = !self.hud.skills_open,
+            TITLE if playing && !self.editing => self.back_to_title(),
+            CREATE => self.create_character(),
+            DELETE => self.delete_character(cx),
             UNDO if self.editing => {
                 self.editor.undo(&mut self.sim.world);
             }
@@ -279,8 +354,8 @@ impl Host for Game {
             SAVE if self.editing => {
                 self.save(cx);
             }
-            QUIT if self.sim.world.is_dirty() => self.ask_before_quitting(cx),
-            QUIT | QUIT_UNSAVED => cx.quit(),
+            QUIT => self.quit(cx),
+            QUIT_UNSAVED => cx.quit(),
             QUIT_SAVED => {
                 let saved = self.save(cx);
                 if saved {
@@ -300,7 +375,16 @@ impl Host for Game {
         self.keys.hint_for(action)
     }
 
+    fn draw_item(&mut self, key: &str, ui: &mut Ui, cx: &mut HostCx) -> bool {
+        key == view_title::NAME_FIELD && self.draw_name_field(ui, cx)
+    }
+
+    fn dialog_ready(&self, action: &Action) -> bool {
+        action.id != CREATE || self.name_ready()
+    }
+
     fn close_requested(&mut self, _: bool, cx: &mut HostCx) -> bool {
+        self.autosave();
         if self.sim.world.is_dirty() {
             self.ask_before_quitting(cx);
         }
@@ -317,13 +401,23 @@ impl AppHost for Game {
         for (slot, image) in self.item_pictures.0.iter_mut().zip(&self.item_images) {
             *slot = image.as_ref().map(|image| images.add(gpu, image));
         }
+        self.title_picture = self.title_image.as_ref().map(|image| images.add(gpu, image));
     }
 
     fn after_rebuild(&mut self, _: &Gpu, _: &mut Images, shell: &mut Shell<Self>) -> bool {
         self.sync_panel(shell)
     }
 
+    fn exiting(&mut self, _: Exit) {
+        // However the game ended, the character in play is kept.
+        self.autosave();
+    }
+
     fn render<'f>(&'f mut self, cx: &mut RenderCx<'f, '_>) {
+        if self.mode == Mode::Title {
+            // The painting covers the window; there is no world to draw.
+            return;
+        }
         let extras = self.extras();
         let Some(renderer) = self.renderer.as_mut().filter(|_| cx.window == 0) else { return };
         // The world's area, in whole pixels inside the window.
@@ -348,6 +442,9 @@ impl AppHost for Game {
 
 #[path = "app_view.rs"]
 mod view;
+
+#[path = "app_title.rs"]
+mod view_title;
 
 #[cfg(test)]
 #[path = "app_tests.rs"]

@@ -24,6 +24,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::terrain::Terrain;
+use crate::wire::{Reader, name_table, write_names};
 use crate::world::{AREA, CHUNK, Chunk, Marker, Prop, PropKind, VOID, World};
 
 pub const EXTENSION: &str = "chunk";
@@ -41,30 +42,6 @@ fn file_name(key: (i32, i32)) -> String {
 fn key_of(file_name: &str) -> Option<(i32, i32)> {
     let (x, y) = file_name.strip_suffix(EXTENSION)?.strip_suffix('.')?.split_once('_')?;
     Some((x.parse().ok()?, y.parse().ok()?))
-}
-
-/// The names in use and, for each item, its place among them. `None`
-/// items (no ground) get [`VOID`].
-fn name_table(items: impl Iterator<Item = Option<&'static str>>) -> (Vec<&'static str>, Vec<u8>) {
-    let mut names: Vec<&'static str> = Vec::new();
-    let indices = items
-        .map(|item| match item {
-            None => VOID,
-            Some(name) => names.iter().position(|n| *n == name).unwrap_or_else(|| {
-                names.push(name);
-                names.len() - 1
-            }) as u8,
-        })
-        .collect();
-    (names, indices)
-}
-
-fn write_names(out: &mut Vec<u8>, names: &[&str]) {
-    out.push(names.len() as u8);
-    for name in names {
-        out.push(name.len() as u8);
-        out.extend_from_slice(name.as_bytes());
-    }
 }
 
 pub(crate) fn encode(chunk: &Chunk) -> Vec<u8> {
@@ -111,53 +88,6 @@ fn placed_section(mut placed: Vec<(&'static str, i32, i32)>) -> Option<Vec<u8>> 
         out.extend_from_slice(&[x.rem_euclid(CHUNK) as u8, y.rem_euclid(CHUNK) as u8, index]);
     }
     Some(out)
-}
-
-/// Bytes read front to back; running out is an error, not a panic.
-struct Reader<'a> {
-    bytes: &'a [u8],
-}
-
-impl<'a> Reader<'a> {
-    fn take(&mut self, n: usize) -> Result<&'a [u8], String> {
-        if n > self.bytes.len() {
-            return Err("the file ends early".to_owned());
-        }
-        let (head, rest) = self.bytes.split_at(n);
-        self.bytes = rest;
-        Ok(head)
-    }
-
-    fn u8(&mut self) -> Result<u8, String> {
-        Ok(self.take(1)?[0])
-    }
-
-    fn u16(&mut self) -> Result<u16, String> {
-        Ok(u16::from_le_bytes(self.take(2)?.try_into().expect("two bytes")))
-    }
-
-    fn u32(&mut self) -> Result<u32, String> {
-        Ok(u32::from_le_bytes(self.take(4)?.try_into().expect("four bytes")))
-    }
-
-    fn tag(&mut self) -> Result<[u8; 4], String> {
-        Ok(self.take(4)?.try_into().expect("four bytes"))
-    }
-
-    /// A name table, each name turned into what it names by `find`.
-    fn names<T>(&mut self, what: &str, find: impl Fn(&str) -> Option<T>) -> Result<Vec<T>, String> {
-        (0..self.u8()?)
-            .map(|_| {
-                let length = self.u8()? as usize;
-                let name = std::str::from_utf8(self.take(length)?).map_err(|_| format!("a {what} name is not text"))?;
-                find(name).ok_or(format!("this build has no {what} called {name:?}"))
-            })
-            .collect()
-    }
-
-    fn done(&self, what: &str) -> Result<(), String> {
-        if self.bytes.is_empty() { Ok(()) } else { Err(format!("{} bytes left over after {what}", self.bytes.len())) }
-    }
 }
 
 /// The chunk at `key` from its file's bytes.

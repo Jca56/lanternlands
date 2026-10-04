@@ -6,6 +6,7 @@ use lntrn_image::Image;
 use lntrn_render::{AtlasTexture, Pass2d, Readback, RenderGraph, TexturePool, clear_pass};
 
 use super::play::{at_a_rock, pass, playing, press_tile};
+use super::titles::{click_slot, create};
 use super::*;
 
 /// Draw the frame the game would show now. `None`, and a line saying
@@ -156,4 +157,37 @@ fn a_level_gained_is_said_at_the_top_and_leaves_the_buttons_clear() {
     let Some(after) = snap("frame-level-up-after", &mut h, &mut shell, &mut game) else { return };
     let same = |a: &Image, b: &Image, rect: Rect| (rect.min.y as u32..rect.max.y as u32).all(|y| (rect.min.x as u32..rect.max.x as u32).all(|x| a.pixel(x, y) == b.pixel(x, y)));
     assert!(same(&image, &after, bag.round()), "the Bag button looked the same while the message showed");
+}
+
+const SKY: [u8; 3] = [0xa9, 0xc6, 0xd2];
+
+#[test]
+fn the_title_screen_is_the_painting_with_the_menu_on_its_right() {
+    let (mut h, mut shell, mut game) = opened("frame_title");
+    create(&mut h, &mut shell, &mut game, 0, "Alva");
+    pass(&mut h, &mut shell, &mut game, 200.0);
+    key(&mut h, &mut shell, &mut game, Key::Escape, Modifiers::NONE);
+    let Some(image) = snap("frame-title", &mut h, &mut shell, &mut game) else { return };
+    // Sky in the top-left corner, and none of the world's grass-and-void
+    // look: the painting covers the window.
+    assert!(near(rgb(&image, Vec2::new(20.0, 20.0)), SKY, 3), "the painting's sky: {:?}", rgb(&image, Vec2::new(20.0, 20.0)));
+    // The slots stand over a dark plate, not over bare sky.
+    let slot = h.rect_of(body(&shell, View::World).with("character").with_index(1)).expect("a slot");
+    assert_eq!(count(&image, slot.expand(8.0), SKY, 3), 0, "no sky shows around the slot");
+    // The game's name is written in white above them.
+    let above = Rect::new(Vec2::new(slot.min.x, slot.min.y - 400.0), Vec2::new(slot.max.x, slot.min.y - 130.0));
+    assert!(count(&image, above, [255, 255, 255], 30) > 800, "the name's letters");
+}
+
+#[test]
+fn the_name_dialog_is_drawn_over_the_title_screen() {
+    let (mut h, mut shell, mut game) = opened("frame_name");
+    click_slot(&mut h, &mut shell, &mut game, 1);
+    h.type_text("Alva");
+    turn(&mut h, &mut shell, &mut game);
+    assert!(shell.popup_open());
+    let Some(image) = snap("frame-name", &mut h, &mut shell, &mut game) else { return };
+    // Something light (the dialog's text) is drawn in the middle of the window.
+    let middle = Rect::from_center_size(WINDOW * 0.5, Vec2::new(700.0, 300.0));
+    assert!(count(&image, middle, [242, 242, 244], 12) > 200, "the dialog's text");
 }

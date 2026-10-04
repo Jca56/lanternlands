@@ -25,6 +25,10 @@ impl Item {
         }
     }
 
+    pub fn from_name(name: &str) -> Option<Item> {
+        Item::ALL.into_iter().find(|i| i.name() == name)
+    }
+
     /// Whether any number of it share a slot. Materials do; gear will not.
     pub const fn stacks(self) -> bool {
         match self {
@@ -108,6 +112,14 @@ impl Inventory {
             }
         }
         true
+    }
+
+    /// Make a slot hold exactly `stack`: for a bag read back from its
+    /// save. A slot that is not there is ignored.
+    pub fn set_slot(&mut self, slot: usize, stack: Option<Stack>) {
+        if let Some(held) = self.slots.get_mut(slot) {
+            *held = stack.filter(|s| s.count > 0);
+        }
     }
 
     /// Trade what two slots hold: how the player tidies the bag.

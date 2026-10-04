@@ -35,6 +35,25 @@ impl Skill {
         }
     }
 
+    /// What it is called in a save file. Never change one.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Skill::Melee => "melee",
+            Skill::Ranged => "ranged",
+            Skill::Magic => "magic",
+            Skill::Defence => "defence",
+            Skill::Vitality => "vitality",
+            Skill::Mining => "mining",
+            Skill::Herbalism => "herbalism",
+            Skill::Smithing => "smithing",
+            Skill::Alchemy => "alchemy",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Skill> {
+        Skill::ALL.into_iter().find(|s| s.name() == name)
+    }
+
     const fn index(self) -> usize {
         self as usize
     }
@@ -76,6 +95,17 @@ impl Skills {
         }
         let (floor, next) = (xp_for_level(level), xp_for_level(level + 1));
         (self.xp(skill) - floor) as f64 / (next - floor) as f64
+    }
+
+    /// Every level added up: how far a character has come, in a number.
+    pub fn total_level(&self) -> u32 {
+        Skill::ALL.iter().map(|&skill| self.level(skill) as u32).sum()
+    }
+
+    /// Make a skill's experience exactly `xp`: for a character read
+    /// back from its save.
+    pub fn set_xp(&mut self, skill: Skill, xp: u32) {
+        self.xp[skill.index()] = xp;
     }
 
     /// Gain experience. Returns the new level if that raised it.
@@ -140,9 +170,24 @@ mod tests {
 
     #[test]
     fn every_skill_has_its_own_name() {
-        let mut names: Vec<&str> = Skill::ALL.map(Skill::label).to_vec();
-        names.sort();
-        names.dedup();
-        assert_eq!(names.len(), Skill::ALL.len());
+        for names in [Skill::ALL.map(Skill::label), Skill::ALL.map(Skill::name)] {
+            let mut names = names.to_vec();
+            names.sort();
+            names.dedup();
+            assert_eq!(names.len(), Skill::ALL.len());
+        }
+        for skill in Skill::ALL {
+            assert_eq!(Skill::from_name(skill.name()), Some(skill));
+        }
+        assert_eq!(Skill::from_name("juggling"), None);
+    }
+
+    #[test]
+    fn the_total_level_adds_every_skill() {
+        let mut skills = Skills::default();
+        assert_eq!(skills.total_level(), 9);
+        skills.set_xp(Skill::Mining, xp_for_level(7));
+        skills.set_xp(Skill::Alchemy, xp_for_level(3));
+        assert_eq!(skills.total_level(), 9 + 6 + 2);
     }
 }

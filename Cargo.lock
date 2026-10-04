@@ -177,6 +177,7 @@ dependencies = [
  "lntrn-image",
  "lntrn-math",
  "lntrn-render",
+ "lntrn-sys",
  "lntrn-ui",
  "sim",
 ]

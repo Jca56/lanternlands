@@ -24,7 +24,7 @@ pub(super) fn playing(name: &str) -> (Harness, Shell<Game>, Game) {
     (h, shell, game)
 }
 
-fn screen_of(game: &Game, tile: (i32, i32)) -> Vec2 {
+pub(super) fn screen_of(game: &Game, tile: (i32, i32)) -> Vec2 {
     game.camera.to_screen(Vec2::new(tile.0 as f64 + 0.5, tile.1 as f64 + 0.5), game.view, game.scale)
 }
 
@@ -188,7 +188,8 @@ fn the_start_tool_sets_the_start_and_shows_a_ghost_there_only_while_editing() {
     // Saved with the map, it is where the next game starts.
     key(&mut h, &mut shell, &mut game, Key::Char('s'), Modifiers::CTRL);
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let again = Game::open(&root.join("assets"), game.map.clone());
+    let mut again = Game::open(&root.join("assets"), game.map.clone(), root.join("target/tmp/game/start_tool/other_saves"));
+    again.enter(0, Character { name: "Newcomer".to_owned(), played: 0 }, None);
     assert_eq!(again.sim.player.tile, tile);
 
     key(&mut h, &mut shell, &mut game, Key::F(2), Modifiers::NONE);

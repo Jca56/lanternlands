@@ -15,13 +15,16 @@ pub mod path;
 pub mod player;
 pub mod rng;
 pub mod skills;
+pub mod save;
 pub mod terrain;
 pub mod testmap;
+mod wire;
 pub mod world;
 
 pub use items::{Inventory, Item, Stack};
 pub use nodes::Node;
 pub use player::{Activity, Event, Player, Sim};
+pub use save::{Character, Saved};
 pub use skills::{Skill, Skills};
 pub use terrain::Terrain;
 pub use world::{CHUNK, Marker, Prop, PropKind, Tile, World};

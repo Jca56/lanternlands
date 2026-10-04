@@ -3,9 +3,9 @@
 
 use lntrn_math::{Color, Rect, Vec2};
 use lntrn_ui::{AreaCx, CursorIcon, Dialog, Key, Response, Sense, ShellRequest, Ui};
-use sim::{Activity, Marker, TICK_SECONDS};
+use sim::{Activity, Event, Marker, TICK_SECONDS};
 
-use super::Game;
+use super::{AUTOSAVE_EVERY, Game, Mode};
 use crate::anim::{Facing, Pose};
 use crate::editor::Tool;
 use crate::scene::Placed;
@@ -109,6 +109,9 @@ impl Game {
         // The game's clock keeps real time between frames, short of a
         // stall; a frame that long is not a second of the game.
         let dt = self.clock.replace(now).map_or(0.0, |last| (now - last).clamp(0.0, LONGEST_WAIT));
+        if self.mode == Mode::Title {
+            return self.draw_title(ui, cx);
+        }
         let hand = ui.interact(ui.id("world"), self.view, Sense::DRAG);
         self.zoom(ui, hand.hovered);
         if self.editing {
@@ -149,7 +152,16 @@ impl Game {
             self.phase = TICK_SECONDS;
         }
         let now = ui.now();
-        self.hud.hear(&self.sim.take_events(), now);
+        let events = self.sim.take_events();
+        self.hud.hear(&events, now);
+        // Time at the game is time played; what is earned is saved at
+        // once, and the rest every so often.
+        self.played += dt;
+        self.unsaved |= busy;
+        let earned = events.iter().any(|e| matches!(e, Event::Got { .. } | Event::LevelUp { .. }));
+        if earned || (self.unsaved && now - self.saved_at >= AUTOSAVE_EVERY) {
+            self.autosave();
+        }
 
         let target = self.player_ground();
         let gap = target - self.camera.center;
