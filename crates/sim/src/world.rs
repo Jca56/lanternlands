@@ -25,10 +25,11 @@ pub enum PropKind {
     TinRock,
     Furnace,
     Anvil,
+    Cauldron,
 }
 
 impl PropKind {
-    pub const ALL: [PropKind; 7] = [PropKind::Tree, PropKind::Rock, PropKind::TinRock, PropKind::HerbPurple, PropKind::HerbCyan, PropKind::Furnace, PropKind::Anvil];
+    pub const ALL: [PropKind; 8] = [PropKind::Tree, PropKind::Rock, PropKind::TinRock, PropKind::HerbPurple, PropKind::HerbCyan, PropKind::Furnace, PropKind::Anvil, PropKind::Cauldron];
 
     /// What it is called in a map file. Never change one: saved maps
     /// hold these.
@@ -41,6 +42,7 @@ impl PropKind {
             PropKind::TinRock => "tin_rock",
             PropKind::Furnace => "furnace",
             PropKind::Anvil => "anvil",
+            PropKind::Cauldron => "cauldron",
         }
     }
 

@@ -42,6 +42,7 @@ pub const fn prop_label(kind: PropKind) -> &'static str {
         PropKind::TinRock => "Tin rock",
         PropKind::Furnace => "Furnace",
         PropKind::Anvil => "Anvil",
+        PropKind::Cauldron => "Cauldron",
         PropKind::HerbPurple => "Purple herb",
         PropKind::HerbCyan => "Cyan herb",
     }

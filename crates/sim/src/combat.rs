@@ -11,6 +11,7 @@ use crate::items::Inventory;
 use crate::monsters::Monster;
 use crate::path;
 use crate::player::{Activity, Event, Intent, Sim, Who, start_tile};
+use crate::potions::{Potion, STONESKIN, STRENGTH};
 use crate::skills::Skill;
 
 /// Ticks from one of the player's bare-handed blows to the next.
@@ -60,7 +61,8 @@ impl Sim {
 
     /// The most one of the player's blows does.
     pub fn max_hit(&self) -> u32 {
-        2 + self.skills.level(Skill::Melee) as u32 / 3 + self.gear.bonus().damage
+        let tonic = if self.potion_left(Potion::Strength) > 0 { STRENGTH } else { 0 };
+        2 + self.skills.level(Skill::Melee) as u32 / 3 + self.gear.bonus().damage + tonic
     }
 
     /// How sure the player's blows are: their Melee level, and what
@@ -72,7 +74,8 @@ impl Sim {
     /// How hard the player is to hit: their Defence level, and what
     /// their armour adds to it.
     pub fn armour(&self) -> u8 {
-        self.skills.level(Skill::Defence).saturating_add(self.gear.bonus().armour)
+        let tonic = if self.potion_left(Potion::Stoneskin) > 0 { STONESKIN } else { 0 };
+        self.skills.level(Skill::Defence).saturating_add(self.gear.bonus().armour).saturating_add(tonic)
     }
 
     /// Whether a blow was given or taken lately.
@@ -371,6 +374,7 @@ impl Sim {
         self.player.from = self.player.tile;
         self.player.health = self.max_health();
         self.book.drop_all();
+        self.tonics.wear_off();
         self.last_fight = None;
         for monster in &mut self.monsters {
             monster.angry = false;

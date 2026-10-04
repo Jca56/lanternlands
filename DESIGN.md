@@ -44,6 +44,10 @@ Locked with Alva on 2026-10-04.
 | Worn gear | Everything shows on the character, in every pose and facing: sword in hand, shield, helmet, body and leg armour, gauntlets, boots |
 | Progression | Per-skill levels trained by doing, no classes. Short and punchy: the cap is level 50, and each level should unlock something |
 | Alchemy inputs | Herbalism (gathering skill) + monster parts |
+| Brewing | At a cauldron on the map, placed with the editor like the furnace and anvil, with the same panel and its 1, 5 and All |
+| Drinking | A press on a potion in the bag drinks it. Potions are not on the hotbar |
+| Potion limits | Both: a potion takes a bag slot each (they do not stack), and after drinking one there is a short wait before the next of its kind |
+| First potions | Healing, Strength, Stoneskin, Regeneration |
 | Out | Woodcutting, Firemaking, Cooking-as-healing, rune-based magic |
 | Setting | Classic medieval fantasy |
 | Content | Designed together: Claude proposes here, Alva approves, then it gets built |
@@ -86,7 +90,7 @@ Built so the systems can be played; Alva has not signed these numbers off.
 
 Every skill starts at level 1.
 
-**Items.** Materials, which stack: copper ore, tin ore, bronze bar, goblin tooth. Gear, one to a slot: bronze pickaxe, sword, shield, helmet, chestplate, greaves, gauntlets, boots.
+**Items.** Materials, which stack: copper ore, tin ore, bronze bar, goblin tooth, purple herb, cyan herb. One to a slot: the bronze pickaxe, sword, shield, helmet, chestplate, greaves, gauntlets and boots, and every potion.
 
 **Nodes.**
 
@@ -94,6 +98,8 @@ Every skill starts at level 1.
 |---|---|---|---|---|---|---|---|---|
 | Copper rock | Mining | 1 | Copper ore | 3 | 3 ticks (1.2 s) | 55%, +3% a level, at most 95% | 12 each | 75 ticks (30 s) |
 | Tin rock | Mining | 1 | Tin ore | 3 | 3 ticks (1.2 s) | 55%, +3% a level, at most 95% | 12 each | 75 ticks (30 s) |
+| Purple herb | Herbalism | 1 | Purple herb | 2 | 2 ticks (0.8 s) | always | 10 each | 75 ticks (30 s) |
+| Cyan herb | Herbalism | 3 | Cyan herb | 2 | 2 ticks (0.8 s) | always | 14 each | 75 ticks (30 s) |
 
 So the first rock is level 2, and a level-1 miner empties a rock in about 6.5 s on average. A bronze pickaxe in the bag takes a tick off every swing (2 ticks, 0.8 s).
 
@@ -110,6 +116,17 @@ So the first rock is level 2, and a level-1 miner empties a rock in about 6.5 s 
 | Bronze shield | Anvil | 3 bars | 4 | 45 | 4 ticks |
 | Bronze greaves | Anvil | 3 bars | 4 | 45 | 4 ticks |
 | Bronze chestplate | Anvil | 5 bars | 5 | 75 | 4 ticks |
+
+**Alchemy.** Brewed at a cauldron, 3 ticks (1.2 s) each; all of it trains Alchemy.
+
+| Potion | From | Level | Experience | What it does |
+|---|---|---|---|---|
+| Healing | 1 purple herb + 1 goblin tooth | 1 | 20 | Gives back 15 health at once |
+| Strength | 1 cyan herb + 1 goblin tooth | 2 | 25 | +2 to the most a blow does, for 150 ticks (60 s) |
+| Stoneskin | 1 purple herb + 1 cyan herb | 3 | 30 | +4 armour, for 150 ticks (60 s) |
+| Regeneration | 1 cyan herb + 2 goblin teeth | 4 | 35 | 1 health every 2 ticks for 75 ticks (30 s), in a fight or out: 37 in all |
+
+After drinking one, the next of its kind waits 15 ticks (6 s). A healing potion is not drunk at full health.
 
 **Gear.** What each piece adds while it is worn. Accuracy counts as Melee levels when the player strikes, armour as Defence levels when they are struck at (4% a level either way); damage is added to the most a blow does.
 
@@ -227,10 +244,11 @@ Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 - **Equipment** (`sim::gear`, `gear_panel.rs`). Seven slots. A press on a piece in the bag puts it on, trading places with whatever was worn there, so there is always room; a press on a worn piece in the gear panel (the Gear button, or G) takes it off into the bag, if there is room. The panel lays the slots out like a body and adds up what is worn. Gear stays on through death, is saved in a section of its own (a save from before gear simply has none), and is saved the moment it changes.
 - **Gear on the character.** Each slot has a sheet laid out exactly like the player's own (`assets/sprites/gear-*.png`), drawn over the body in a fixed order: legs, feet, body, hands, head, shield, weapon. The shield has a second sheet drawn under the body, for the views where it shows from behind. The sheets are plain greys and the game multiplies them by the metal's colour, so a new metal is a colour, not eight more sheets. Greaves, boots, chestplate and gauntlets were made in Lantern Studio from the player's own sheet (each body part picked out by its colour and filled grey, so they fit every pose by construction); helmet, sword and shield are drawn and placed for each of the 18 frames. The source is `art/sprites/player-gear.lstudio`.
 - **Sheets of cells are trimmed.** A grid's cell is packed as only the part of it that is drawn, with its anchor moved to match, and a cell with nothing in it is no sprite. The gear sheets are mostly empty, so this keeps the packed sheet small; it shrank the player's and the goblin's too.
+- **Herbs and potions** (`sim::potions`, `tonics.rs`). The purple and cyan herbs already on the map are nodes now: a click walks onto one (they are not in the way) and picks it, which never fails; a picked one is drawn as its leaves until it grows back. A cauldron is a third station, with the same panel as the furnace and anvil; a station names the skill it takes, so the panel says Alchemy there. A press on a potion in the bag drinks it (the same press that puts gear on). What a lasting potion is doing shows under the health bar, its picture and the seconds left; a potion in the bag whose kind is still waiting is dark with its seconds on it. What potions are doing is counted in the world's ticks, ends with death, and is not saved.
 - **More drawings.** The player's sheet gained a wind-up and a strike for each facing; a spent rock is the rock without its copper; items have 128 px icons in `assets/items/` (sources in `art/items/`).
 - **Characters and saves.** The game opens on a title screen (`title.rs`): the painting `assets/title/title-01.png` (source in `art/title/`) cut to fill the window, the game's name, three character slots and Quit. An empty slot asks for a name (1 to 16 letters) and starts a new character; a held one continues; Delete asks first. A save (`sim::save`) is one small binary file per character, `character-N.save`, in sections like a chunk file's, with skills and items by name: who they are and how long they have been played, where they stand, their skills and bag, the nodes they left spent with the time each has left, and their grave. Health and monsters are not saved: both come back whole. It is written whole and then moved into place. Resuming on a map that has changed stands the player as near where they were as they can be and forgets nodes that are gone. Esc goes back to the title screen. The map belongs to no character: all three play on the same one.
 - **Controls for now.** Click to walk, to work a rock, to fight a monster, to use a furnace or an anvil, or to open the grave. 1 to 6 for the hotbar; I, K and G for the bag, the skills and the gear. Esc for the title screen. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
-- **How it is checked.** 334 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels, the bag, a fight and a grave can be looked at and their pixels checked. Fights are played through end to end the same way: a goblin is put beside the player and time is let pass.
+- **How it is checked.** 350 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels, the bag, a fight and a grave can be looked at and their pixels checked. Fights are played through end to end the same way: a goblin is put beside the player and time is let pass.
 
 ### Calls Claude made, Alva's to overrule
 
@@ -291,10 +309,17 @@ Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 55. Gear is put on and taken off with one press, in a fight too; there is no dragging yet.
 56. A panel that would reach over the hotbar stands on top of it instead of on the buttons.
 57. The gear panel's empty slots say what goes in them, dimly.
+58. Every herb and potion number above.
+59. The herbs are still called by their colours, on the map and in the bag; real names are for Alva to choose.
+60. No bottles: a potion is just its herb and its monster part. Nothing is left over after drinking.
+61. A herb is picked with the same swing the player mines and fights with.
+62. A healing potion pressed at full health stays in the bag rather than being wasted.
+63. Potions are told apart by a white mark as well as their colour: a cross, an arrow, a shield, a leaf.
 
 ## Open questions
 
 - Bank size
+- Real names for the herbs
 - Whether gear should need levels to wear, and what iron and later metals cost and give
 - How abilities are unlocked (all are there from the start for now), and whether the bar can be rearranged
 - Where experience gained is shown, now that it no longer floats over the player
@@ -318,5 +343,5 @@ Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 5b. Abilities: the hotbar, cooldowns, Heavy Strike, Flurry, Kick, Guard. **Done 2026-10-04**: Alva played it ("super cool! Combat works nicely!")
 6a. Smithing: tin rock, furnace, anvil, bronze bars, the bronze set and a pickaxe forged into the bag, the making panel. **Done 2026-10-04**: Alva smithed the whole set ("Heck yeah! Awesome!")
 6b. Equipment: the seven slots, the gear panel, what gear does in a fight, gear drawn on the character and tinted by its metal, gear kept through death and saved. **Done 2026-10-04**: Alva wore it all, screenshot and all
-7. Herbalism, Alchemy, potions
+7. Herbalism, Alchemy, potions: herbs as nodes, the cauldron, the four first potions, drinking from the bag, what a potion does shown while it lasts. **Done 2026-10-04**: Alva tried it ("it works!") and found that continuing a game started at a new character's health, since fixed
 8. NPCs, shops, bank, dialogue

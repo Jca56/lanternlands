@@ -80,6 +80,8 @@ pub struct Look {
     rock_spent: Option<SpriteId>,
     furnace: Option<SpriteId>,
     anvil: Option<SpriteId>,
+    cauldron: Option<SpriteId>,
+    herb_picked: Option<SpriteId>,
     herb_purple: Option<SpriteId>,
     herb_cyan: Option<SpriteId>,
     tuft: Option<SpriteId>,
@@ -113,12 +115,12 @@ pub fn metal_tint(metal: Metal) -> [f32; 4] {
 
 impl Look {
     pub fn find(set: &SpriteSet) -> Look {
-        Look { tree: set.id("tree"), rock: set.id("rock"), tin_rock: set.id("tin_rock"), rock_spent: set.id("rock_spent"), furnace: set.id("furnace"), anvil: set.id("anvil"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft"), gravestone: set.id("gravestone"), target_ring: set.id("target_ring"), player: WalkSprites::find(set, "player"), goblin: WalkSprites::find(set, "goblin"), gear: Slot::ALL.map(|slot| GearSprites { over: WalkSprites::find(set, &format!("gear_{}", slot.name())), under: WalkSprites::find(set, &format!("gear_{}_under", slot.name())) }) }
+        Look { tree: set.id("tree"), rock: set.id("rock"), tin_rock: set.id("tin_rock"), rock_spent: set.id("rock_spent"), furnace: set.id("furnace"), anvil: set.id("anvil"), cauldron: set.id("cauldron"), herb_picked: set.id("herb_picked"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft"), gravestone: set.id("gravestone"), target_ring: set.id("target_ring"), player: WalkSprites::find(set, "player"), goblin: WalkSprites::find(set, "goblin"), gear: Slot::ALL.map(|slot| GearSprites { over: WalkSprites::find(set, &format!("gear_{}", slot.name())), under: WalkSprites::find(set, &format!("gear_{}_under", slot.name())) }) }
     }
 
     /// The names of the sprites it looked for and did not find.
     pub fn missing(&self) -> Vec<String> {
-        let all = [("tree", self.tree), ("rock", self.rock), ("tin_rock", self.tin_rock), ("rock_spent", self.rock_spent), ("furnace", self.furnace), ("anvil", self.anvil), ("herb_purple", self.herb_purple), ("herb_cyan", self.herb_cyan), ("tuft", self.tuft), ("gravestone", self.gravestone), ("target_ring", self.target_ring)];
+        let all = [("tree", self.tree), ("rock", self.rock), ("tin_rock", self.tin_rock), ("rock_spent", self.rock_spent), ("furnace", self.furnace), ("anvil", self.anvil), ("cauldron", self.cauldron), ("herb_picked", self.herb_picked), ("herb_purple", self.herb_purple), ("herb_cyan", self.herb_cyan), ("tuft", self.tuft), ("gravestone", self.gravestone), ("target_ring", self.target_ring)];
         all.into_iter().filter(|(_, id)| id.is_none()).map(|(name, _)| name.to_owned()).chain(self.player.missing("player")).chain(self.goblin.missing("goblin")).collect()
     }
 
@@ -126,6 +128,7 @@ impl Look {
     fn spent(&self, kind: PropKind) -> Option<SpriteId> {
         match kind {
             PropKind::Rock | PropKind::TinRock => self.rock_spent,
+            PropKind::HerbPurple | PropKind::HerbCyan => self.herb_picked,
             _ => None,
         }
     }
@@ -152,6 +155,7 @@ impl Look {
             PropKind::TinRock => self.tin_rock,
             PropKind::Furnace => self.furnace,
             PropKind::Anvil => self.anvil,
+            PropKind::Cauldron => self.cauldron,
         }
     }
 }
@@ -315,9 +319,9 @@ mod tests {
     #[test]
     fn every_sprite_the_scene_asks_for_is_in_the_assets() {
         assert_eq!(Look::find(&set()).missing(), Vec::<String>::new());
-        // With no assets: the eleven of the map, and eighteen each for
-        // the player and the goblin.
-        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 47);
+        // With no assets: the thirteen of the map, and eighteen each
+        // for the player and the goblin.
+        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 49);
     }
 
     #[test]

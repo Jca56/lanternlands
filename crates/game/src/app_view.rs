@@ -9,7 +9,7 @@ use super::{AUTOSAVE_EVERY, Game, Mode};
 use crate::anim::{Facing, Pose};
 use crate::editor::Tool;
 use crate::hotbar;
-use crate::hud::{Sight, Wear};
+use crate::hud::{Press, Sight};
 use crate::making;
 use crate::scene::{GEAR_ORDER, Placed, metal_tint};
 
@@ -210,11 +210,11 @@ impl Game {
         }
         let (camera, view, scale) = (self.camera, self.view, self.scale);
         let monsters = self.monster_grounds();
-        let sight = Sight { player: target, to_screen: &|world| camera.to_screen(world, view, scale), monsters: &monsters, tile_px: camera.tile_px(scale) };
+        let sight = Sight { player: target, to_screen: &|world| camera.to_screen(world, view, scale), monsters: &monsters, tile_px: camera.tile_px(scale), into: self.world_phase / TICK_SECONDS };
         let wear = self.hud.draw(ui, self.view, &self.sim, &self.item_pictures, &sight);
         match wear {
-            Some(Wear::On(slot)) => self.sim.equip(slot),
-            Some(Wear::Off(slot)) => self.sim.unequip(slot),
+            Some(Press::Bag(slot)) => self.sim.use_slot(slot),
+            Some(Press::Worn(slot)) => self.sim.unequip(slot),
             None => {}
         }
         if wear.is_some() {

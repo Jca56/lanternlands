@@ -7,7 +7,7 @@ use lntrn_ui::{ImageHandle, Sense, Ui};
 use sim::items::SLOTS;
 use sim::{Event, Item, Sim, Skill, Slot, Who};
 
-use crate::{gear_panel, hotbar};
+use crate::{gear_panel, hotbar, tonics};
 
 /// Sizes in logical pixels.
 const SLOT: f64 = 75.0;
@@ -52,6 +52,8 @@ const HEALTH_LEFT: Color = Color::hex(0x8fce5c);
 const HEALTH_LOST: Color = Color::hex(0x7a2e2a);
 const PLAIN: Color = Color::WHITE;
 const HURT: Color = Color::hex(0xff4a3d);
+/// Health given back: lighter than the grass it floats over.
+const HEALED: Color = Color::hex(0xc8f7a0);
 const MISSED: Color = Color::hex(0xb9c2c8);
 
 /// A line of text and when it appeared: rising over someone's head
@@ -78,6 +80,8 @@ pub struct Sight<'a> {
     pub monsters: &'a [Vec2],
     /// Physical pixels a tile is across.
     pub tile_px: f64,
+    /// How far into the world's tick this frame is, 0 to 1.
+    pub into: f64,
 }
 
 /// The items' pictures, uploaded for the interface to draw.
@@ -90,12 +94,13 @@ impl ItemPictures {
     }
 }
 
-/// What a press on the bag or the gear asks for: something put on from
-/// a slot of the bag, or what is worn in a slot taken off.
+/// What a press on the bag or the gear asks for: what is in a slot of
+/// the bag used (gear put on, a potion drunk), or what is worn in a
+/// slot taken off.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Wear {
-    On(usize),
-    Off(Slot),
+pub enum Press {
+    Bag(usize),
+    Worn(Slot),
 }
 
 #[derive(Default)]
@@ -123,6 +128,9 @@ impl Hud {
                 Event::Hit { on: Who::Player, damage } => (format!("-{damage}"), None, HURT, true),
                 Event::Hit { on, damage } => (damage.to_string(), over(on), PLAIN, true),
                 Event::Miss { on } => ("miss".to_owned(), over(on), MISSED, true),
+                // A potion that healed says how much; the others, their name.
+                Event::Drank { healed, .. } if healed > 0 => (format!("+{healed}"), None, HEALED, true),
+                Event::Drank { potion, .. } => (potion.item().label().to_owned(), None, PLAIN, false),
                 Event::Blocked => ("block".to_owned(), None, MISSED, true),
                 Event::Guarding => ("guard".to_owned(), None, PLAIN, true),
                 Event::Stunned { monster } => ("stunned".to_owned(), over(Who::Monster(monster)), PLAIN, true),
@@ -189,7 +197,7 @@ impl Hud {
 
     /// Draw over the world's area `view`. Gives what a press on the bag
     /// or the gear asked for, if one did.
-    pub fn draw(&mut self, ui: &mut Ui, view: Rect, sim: &Sim, pictures: &ItemPictures, sight: &Sight) -> Option<Wear> {
+    pub fn draw(&mut self, ui: &mut Ui, view: Rect, sim: &Sim, pictures: &ItemPictures, sight: &Sight) -> Option<Press> {
         let now = ui.now();
         self.drops.retain(|d| now - d.born < DROP_LIFE);
         self.messages.retain(|m| now - m.born < MESSAGE_LIFE);
@@ -201,7 +209,8 @@ impl Hud {
         // Over their head: clear of their bar while it shows.
         let above_player = (sight.to_screen)(sight.player - Vec2::new(0.0, if hurt { PLAYER_HEAD_OVER } else { PLAYER_HEAD }));
         self.draw_drops(ui, sight, above_player, now);
-        draw_health(ui, view, sim);
+        let health = draw_health(ui, view, sim);
+        tonics::draw_effects(ui, Vec2::new(health.min.x, health.max.y + ui.m.px(GAP)), sim, pictures, sight.into);
         self.draw_messages(ui, view, now);
 
         let m = ui.m;
@@ -239,7 +248,7 @@ impl Hud {
             let rows = SLOTS.div_ceil(COLUMNS) as f64;
             let size = Vec2::new(px(SLOT) * COLUMNS as f64 + gap * (COLUMNS as f64 - 1.0) + px(PAD) * 2.0, px(SLOT) * rows + gap * rows + m.widget_h + px(PAD) * 2.0);
             let rect = stand(right, size.x)(size);
-            ui.child(rect, LAYER, |ui| wear = draw_bag(ui, rect, sim, pictures).map(Wear::On));
+            ui.child(rect, LAYER, |ui| wear = draw_bag(ui, rect, sim, pictures, sight.into).map(Press::Bag));
             right = rect.min.x - gap;
         }
         if self.skills_open {
@@ -261,7 +270,7 @@ impl Hud {
             let rect = stand(right, size.x)(size);
             ui.child(rect, LAYER, |ui| {
                 backdrop(ui, rect);
-                wear = gear_panel::draw(ui, rect, sim, pictures).map(Wear::Off).or(wear);
+                wear = gear_panel::draw(ui, rect, sim, pictures).map(Press::Worn).or(wear);
             });
         }
         wear
@@ -312,8 +321,8 @@ fn bar(ui: &mut Ui, rect: Rect, share: f64) {
 }
 
 /// The player's health, in the top-left corner: a bar, and the numbers
-/// on it.
-fn draw_health(ui: &mut Ui, view: Rect, sim: &Sim) {
+/// on it. Gives where the bar is.
+fn draw_health(ui: &mut Ui, view: Rect, sim: &Sim) -> Rect {
     let margin = ui.m.px(MARGIN);
     let rect = Rect::from_min_size(view.min + Vec2::new(margin, margin), Vec2::new(ui.m.px(HEALTH.x), ui.m.px(HEALTH.y))).round();
     let (health, max) = (sim.player.health, sim.max_health());
@@ -322,6 +331,7 @@ fn draw_health(ui: &mut Ui, view: Rect, sim: &Sim) {
     let text = format!("{health} / {max}");
     ui.text_centered(&text, &style, rect.translate(Vec2::new(0.0, ui.m.px(2.0))), Color::rgba(0.0, 0.0, 0.0, 0.8));
     ui.text_centered(&text, &style, rect, Color::WHITE);
+    rect
 }
 
 /// A bar over every monster that is hurt or after the player.
@@ -356,9 +366,9 @@ fn backdrop(ui: &mut Ui, rect: Rect) {
 
 /// The bag: every slot with what it holds and how many, and under them
 /// the name of what the pointer is on.
-/// The bag. Gives the slot of something wearable that was pressed, to
-/// be put on.
-fn draw_bag(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures) -> Option<usize> {
+/// The bag. Gives the slot of something that was pressed and can be
+/// used: gear to put on, a potion to drink.
+fn draw_bag(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures, into: f64) -> Option<usize> {
     backdrop(ui, rect);
     let mut put_on = None;
     let (slot, gap, pad) = (ui.m.px(SLOT), ui.m.px(GAP), ui.m.px(PAD));
@@ -368,8 +378,8 @@ fn draw_bag(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures) -> Opti
         let (column, row) = ((i % COLUMNS) as f64, (i / COLUMNS) as f64);
         let at = rect.min + Vec2::new(pad + column * (slot + gap), pad + row * (slot + gap));
         let cell = Rect::from_min_size(at, Vec2::new(slot, slot));
-        let wearable = held.is_some_and(|stack| stack.item.slot().is_some());
-        let r = ui.interact(ui.id("slot").with_index(i), cell, if wearable { Sense::CLICK } else { Sense::NONE });
+        let usable = held.is_some_and(|stack| stack.item.slot().is_some() || stack.item.potion().is_some());
+        let r = ui.interact(ui.id("slot").with_index(i), cell, if usable { Sense::CLICK } else { Sense::NONE });
         ui.recessed(cell, ui.theme.field);
         let Some(stack) = held else { continue };
         if r.clicked {
@@ -385,6 +395,7 @@ fn draw_bag(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures) -> Opti
             let fitted = Rect::from_center_size(cell.center(), Vec2::new(image.width as f64, image.height as f64) * scale).round();
             ui.draw.image(fitted, image, 0.0, Color::WHITE);
         }
+        tonics::draw_wait(ui, cell, sim, stack.item, into);
         if stack.item.stacks() {
             // The count in the corner, with a dark copy under it so it
             // reads over any picture.

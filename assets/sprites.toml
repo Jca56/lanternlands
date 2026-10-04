@@ -110,6 +110,16 @@ anchor = [130, 288]
 file = "sprites/anvil.png"
 anchor = [120, 186]
 
+# Where herbs and monsters' parts are brewed into potions.
+[sprites.cauldron]
+file = "sprites/cauldron.png"
+anchor = [120, 206]
+
+# A herb that has been picked, until it grows back.
+[sprites.herb_picked]
+file = "sprites/herb-picked.png"
+anchor = [82, 146]
+
 # A rock that has given all its ore, until it comes back.
 [sprites.rock_spent]
 file = "sprites/rock-depleted.png"

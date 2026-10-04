@@ -46,7 +46,10 @@ fn every_recipe_is_sound_and_the_set_can_be_made_in_order_without_filler() {
         assert!(RECIPES[..i].iter().all(|other| other.makes != r.makes), "one way to make each thing");
         assert!(!r.from.iter().any(|&(item, _)| item == r.makes));
     }
-    assert!(RECIPES.windows(2).all(|w| w[0].level <= w[1].level), "listed easiest first");
+    for station in Station::ALL {
+        let levels: Vec<u8> = RECIPES.iter().filter(|r| r.station == station).map(|r| r.level).collect();
+        assert!(!levels.is_empty() && levels.is_sorted(), "{station:?} lists its easiest first: {levels:?}");
+    }
     // Smelting the bars for a thing and then forging it, each in turn,
     // is always enough experience for the next.
     let mut skills = crate::skills::Skills::default();
@@ -127,7 +130,7 @@ fn forging_wants_the_anvil_the_level_and_the_bars() {
     sim.click((8, 2));
     assert_eq!(run(&mut sim), vec![Event::AtStation { station: Station::Anvil }]);
     // Too hard for a beginner: said, and nothing made.
-    assert!(!sim.can_smith(&RECIPES[sword]));
+    assert!(!sim.can_make(&RECIPES[sword]));
     sim.make(sword, 1);
     assert_eq!(sim.take_events(), vec![Event::TooHard { skill: Skill::Smithing, level: RECIPES[sword].level }]);
     assert_eq!(sim.making(), None);

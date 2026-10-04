@@ -1,10 +1,10 @@
-//! The panel that opens at a furnace or an anvil: what can be made
+//! The panel that opens at a furnace, an anvil or a cauldron: what can be made
 //! there, what each takes against what is carried, and buttons to make
 //! one, five or all of it.
 
 use lntrn_math::{Color, Rect, Vec2};
 use lntrn_ui::{Sense, Ui};
-use sim::{RECIPES, Sim, Skill};
+use sim::{RECIPES, Sim};
 
 use crate::hotbar::PLATE;
 use crate::hud::ItemPictures;
@@ -59,14 +59,15 @@ pub fn draw(ui: &mut Ui, view: Rect, sim: &Sim, pictures: &ItemPictures) -> Opti
         let inside = panel.shrink(pad);
         let header = Rect::from_min_size(inside.min, Vec2::new(inside.width(), px(HEADER)));
         ui.text_in_rect(station.label(), &big, header, ui.theme.text);
-        ui.text_right(&format!("Smithing {}", sim.skills.level(Skill::Smithing)), &plain, header, ui.theme.text);
+        let skill = station.skill();
+        ui.text_right(&format!("{} {}", skill.label(), sim.skills.level(skill)), &plain, header, ui.theme.text);
 
         let making = sim.making();
         for (line, &index) in rows.iter().enumerate() {
             let recipe = &RECIPES[index];
             let row = Rect::from_min_size(Vec2::new(inside.min.x, header.max.y + line as f64 * (row_h + gap)), Vec2::new(inside.width(), row_h));
             ui.recessed(row, ui.theme.field);
-            let able = sim.can_smith(recipe);
+            let able = sim.can_make(recipe);
             let dim = if able { 1.0 } else { 0.45 };
 
             // What it makes, its name, and under that what it takes
@@ -98,7 +99,7 @@ pub fn draw(ui: &mut Ui, view: Rect, sim: &Sim, pictures: &ItemPictures) -> Opti
             // make, or the buttons to make some.
             let right = Rect::new(Vec2::new(row.max.x - pad - button.x * 3.0 - gap * 2.0, row.min.y), row.max - Vec2::new(pad, 0.0));
             if !able {
-                ui.text_right(&format!("Smithing {}", recipe.level), &plain, right, LACKING);
+                ui.text_right(&format!("{} {}", skill.label(), recipe.level), &plain, right, LACKING);
                 continue;
             }
             if let Some((_, left, _)) = making.filter(|(now, _, _)| std::ptr::eq(*now, recipe)) {

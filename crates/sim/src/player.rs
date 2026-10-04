@@ -7,6 +7,7 @@ use crate::combat::Grave;
 use crate::gear::Gear;
 use crate::items::{Inventory, Item};
 use crate::making::Station;
+use crate::potions::{Potion, Tonics};
 use crate::monsters::Monster;
 use crate::nodes::Node;
 use crate::path;
@@ -87,6 +88,8 @@ pub enum Event {
     TooHard { skill: Skill, level: u8 },
     /// The player walked up to a station, to make things at it.
     AtStation { station: Station },
+    /// The player drank a potion, and it gave back this much health.
+    Drank { potion: Potion, healed: u32 },
     /// A blow landed, for this much.
     Hit { on: Who, damage: u32 },
     /// A blow missed.
@@ -164,6 +167,7 @@ pub struct Sim {
     /// The world tick of the last blow given or taken.
     pub(crate) last_fight: Option<u64>,
     pub(crate) book: Book,
+    pub(crate) tonics: Tonics,
     pub(crate) rng: Rng,
     pub(crate) events: Vec<Event>,
 }
@@ -200,7 +204,7 @@ impl Sim {
         let tile = start_tile(&world);
         let player = Player { tile, from: tile, steps: 0, health: 0, swung: false, path: VecDeque::new(), goal: None, intent: None, activity: None, station: None };
         let monsters = monsters_of(&world);
-        let mut sim = Sim { world, player, skills: Skills::default(), inventory: Inventory::default(), gear: Gear::default(), ticks: 0, worked: HashMap::new(), monsters, grave: None, last_fight: None, book: Book::default(), rng: Rng::new(0x5EED), events: Vec::new() };
+        let mut sim = Sim { world, player, skills: Skills::default(), inventory: Inventory::default(), gear: Gear::default(), ticks: 0, worked: HashMap::new(), monsters, grave: None, last_fight: None, book: Book::default(), tonics: Tonics::default(), rng: Rng::new(0x5EED), events: Vec::new() };
         sim.player.health = sim.max_health();
         sim
     }
@@ -237,7 +241,7 @@ impl Sim {
     /// monster going about, health mending, an ability's time running
     /// down.
     pub fn waiting(&self) -> bool {
-        self.worked.values().any(|w| w.back_at.is_some()) || !self.monsters.is_empty() || self.player.health < self.max_health() || self.book.cooling(self.ticks)
+        self.worked.values().any(|w| w.back_at.is_some()) || !self.monsters.is_empty() || self.player.health < self.max_health() || self.book.cooling(self.ticks) || self.tonics.running(self.ticks)
     }
 
     /// Whether anything other than the player moved or struck on the
@@ -324,6 +328,7 @@ impl Sim {
         self.worked.retain(|_, w| w.back_at.is_none_or(|at| at > now));
         self.monsters_act();
         self.recover();
+        self.regenerate();
     }
 
     /// The player's tick: the next step of their way, then what they
@@ -361,7 +366,9 @@ impl Sim {
             self.events.push(Event::AtStation { station });
             return;
         }
-        let Some(node) = self.node_at(at).filter(|_| (dx, dy) != (0, 0)) else {
+        // A node that is in the way is worked from beside it; one that
+        // is not (a herb) can be worked from on top of it too.
+        let Some(node) = self.node_at(at).filter(|_| (dx, dy) != (0, 0) || self.world.walkable(at.0, at.1)) else {
             return;
         };
         if self.is_spent(at) {

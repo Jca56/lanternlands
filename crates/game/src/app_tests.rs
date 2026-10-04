@@ -337,3 +337,6 @@ mod smithing;
 
 #[path = "app_gear_tests.rs"]
 mod gear;
+
+#[path = "app_alchemy_tests.rs"]
+mod alchemy;

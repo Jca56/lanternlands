@@ -17,10 +17,16 @@ pub enum Item {
     BronzeGreaves,
     BronzeGauntlets,
     BronzeBoots,
+    PurpleHerb,
+    CyanHerb,
+    HealingPotion,
+    StrengthPotion,
+    StoneskinPotion,
+    RegenerationPotion,
 }
 
 impl Item {
-    pub const ALL: [Item; 12] = [
+    pub const ALL: [Item; 18] = [
         Item::CopperOre,
         Item::GoblinTooth,
         Item::TinOre,
@@ -33,6 +39,12 @@ impl Item {
         Item::BronzeGreaves,
         Item::BronzeGauntlets,
         Item::BronzeBoots,
+        Item::PurpleHerb,
+        Item::CyanHerb,
+        Item::HealingPotion,
+        Item::StrengthPotion,
+        Item::StoneskinPotion,
+        Item::RegenerationPotion,
     ];
 
     /// What it is called in files (its picture's name). Never change one.
@@ -50,6 +62,12 @@ impl Item {
             Item::BronzeGreaves => "bronze_greaves",
             Item::BronzeGauntlets => "bronze_gauntlets",
             Item::BronzeBoots => "bronze_boots",
+            Item::PurpleHerb => "purple_herb",
+            Item::CyanHerb => "cyan_herb",
+            Item::HealingPotion => "healing_potion",
+            Item::StrengthPotion => "strength_potion",
+            Item::StoneskinPotion => "stoneskin_potion",
+            Item::RegenerationPotion => "regeneration_potion",
         }
     }
 
@@ -68,6 +86,12 @@ impl Item {
             Item::BronzeGreaves => "Bronze greaves",
             Item::BronzeGauntlets => "Bronze gauntlets",
             Item::BronzeBoots => "Bronze boots",
+            Item::PurpleHerb => "Purple herb",
+            Item::CyanHerb => "Cyan herb",
+            Item::HealingPotion => "Healing potion",
+            Item::StrengthPotion => "Strength potion",
+            Item::StoneskinPotion => "Stoneskin potion",
+            Item::RegenerationPotion => "Regeneration potion",
         }
     }
 
@@ -75,10 +99,10 @@ impl Item {
         Item::ALL.into_iter().find(|i| i.name() == name)
     }
 
-    /// Whether any number of it share a slot. Materials do; gear does
-    /// not.
+    /// Whether any number of it share a slot. Materials do; gear and
+    /// potions do not.
     pub const fn stacks(self) -> bool {
-        matches!(self, Item::CopperOre | Item::GoblinTooth | Item::TinOre | Item::BronzeBar)
+        matches!(self, Item::CopperOre | Item::GoblinTooth | Item::TinOre | Item::BronzeBar | Item::PurpleHerb | Item::CyanHerb)
     }
 
     /// How many ticks quicker a swing at a rock is with this in the

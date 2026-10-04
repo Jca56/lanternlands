@@ -17,6 +17,7 @@ mod render;
 mod saves;
 mod scene;
 mod title;
+mod tonics;
 
 use lntrn_app::{AppConfig, run};
 use lntrn_ui::Shell;

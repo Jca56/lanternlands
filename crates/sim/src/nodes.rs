@@ -30,8 +30,12 @@ pub struct Node {
 }
 
 impl Node {
-    /// The chance a swing gets one, for someone of `level`.
+    /// The chance a swing gets one, for someone of `level`. A node that
+    /// is sure to begin with stays sure.
     pub fn chance_at(&self, level: u8) -> f64 {
+        if self.chance >= 1.0 {
+            return 1.0;
+        }
         let past = level.saturating_sub(self.level) as f64;
         (self.chance + self.chance_per_level * past).min(BEST_CHANCE)
     }
@@ -45,7 +49,10 @@ impl PropKind {
             PropKind::Rock => Some(Node { skill: Skill::Mining, level: 1, item: Item::CopperOre, xp: 12, yields: 3, swing_ticks: 3, chance: 0.55, chance_per_level: 0.03, respawn_ticks: 75 }),
             // A tin rock: the same to mine, for the other half of bronze.
             PropKind::TinRock => Some(Node { skill: Skill::Mining, level: 1, item: Item::TinOre, xp: 12, yields: 3, swing_ticks: 3, chance: 0.55, chance_per_level: 0.03, respawn_ticks: 75 }),
-            PropKind::Tree | PropKind::HerbPurple | PropKind::HerbCyan | PropKind::Furnace | PropKind::Anvil => None,
+            // Herbs: a quick pick that never fails, two to a plant.
+            PropKind::HerbPurple => Some(Node { skill: Skill::Herbalism, level: 1, item: Item::PurpleHerb, xp: 10, yields: 2, swing_ticks: 2, chance: 1.0, chance_per_level: 0.0, respawn_ticks: 75 }),
+            PropKind::HerbCyan => Some(Node { skill: Skill::Herbalism, level: 3, item: Item::CyanHerb, xp: 14, yields: 2, swing_ticks: 2, chance: 1.0, chance_per_level: 0.0, respawn_ticks: 75 }),
+            PropKind::Tree | PropKind::Furnace | PropKind::Anvil | PropKind::Cauldron => None,
         }
     }
 }
