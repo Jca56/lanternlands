@@ -21,10 +21,12 @@ pub enum Tool {
     Place,
     /// Take a prop off a tile.
     Remove,
+    /// Pick a prop up and set it down on another tile.
+    Move,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 5] = [Tool::Brush, Tool::Eraser, Tool::Fill, Tool::Place, Tool::Remove];
+    pub const ALL: [Tool; 6] = [Tool::Brush, Tool::Eraser, Tool::Fill, Tool::Place, Tool::Remove, Tool::Move];
 
     pub const fn label(self) -> &'static str {
         match self {
@@ -33,6 +35,7 @@ impl Tool {
             Tool::Fill => "Fill",
             Tool::Place => "Place",
             Tool::Remove => "Remove",
+            Tool::Move => "Move",
         }
     }
 
@@ -53,6 +56,8 @@ pub struct MapEditor {
     pub history: History,
     /// Where the stroke under way last touched, in tiles.
     stroke: Option<Vec2>,
+    /// The tile of the prop the move tool is carrying.
+    held: Option<(i32, i32)>,
 }
 
 fn tile_under(at: Vec2) -> (i32, i32) {
@@ -61,7 +66,7 @@ fn tile_under(at: Vec2) -> (i32, i32) {
 
 impl MapEditor {
     pub fn new() -> MapEditor {
-        MapEditor { tool: Tool::Brush, size: 1, terrain: Terrain::Grass, prop: PropKind::Tree, history: History::new(), stroke: None }
+        MapEditor { tool: Tool::Brush, size: 1, terrain: Terrain::Grass, prop: PropKind::Tree, history: History::new(), stroke: None, held: None }
     }
 
     /// The tiles the held tool would change with the pointer at `at`
@@ -75,11 +80,14 @@ impl MapEditor {
         self.history.begin();
         self.stroke = Some(at);
         let (x, y) = tile_under(at);
-        if self.tool == Tool::Fill {
+        match self.tool {
             // A flood happens where the button went down and nowhere else.
-            edit::fill(&mut self.history, world, x, y, self.terrain);
-        } else {
-            self.touch(world, at, at);
+            Tool::Fill => {
+                edit::fill(&mut self.history, world, x, y, self.terrain);
+            }
+            // What is carried is whatever stood where the button went down.
+            Tool::Move => self.held = world.prop_at(x, y).map(|_| (x, y)),
+            _ => self.touch(world, at, at),
         }
     }
 
@@ -95,9 +103,15 @@ impl MapEditor {
     /// The button came up, or the stroke was cut short: what it did is
     /// one step of the history.
     pub fn release(&mut self) {
+        self.held = None;
         if self.stroke.take().is_some() {
             self.history.commit();
         }
+    }
+
+    /// The tile of the prop being carried by the move tool, if one is.
+    pub fn carrying(&self) -> Option<(i32, i32)> {
+        self.held
     }
 
     #[cfg(test)]
@@ -106,7 +120,7 @@ impl MapEditor {
     }
 
     pub fn undo(&mut self, world: &mut World) -> bool {
-        self.stroke = None;
+        (self.stroke, self.held) = (None, None);
         self.history.undo(world)
     }
 
@@ -128,6 +142,15 @@ impl MapEditor {
             }
             Tool::Remove => {
                 edit::remove(&mut self.history, world, x, y);
+            }
+            // The carried prop follows the pointer onto any tile it can
+            // stand on, and waits on its last one over those it can't.
+            Tool::Move => {
+                if let Some(from) = self.held
+                    && edit::move_prop(&mut self.history, world, from, (x, y))
+                {
+                    self.held = Some((x, y));
+                }
             }
         }
     }
@@ -170,6 +193,7 @@ mod tests {
     #[test]
     fn the_footprint_is_what_a_press_changes() {
         for (tool, size) in [(Tool::Brush, 1), (Tool::Brush, 4), (Tool::Eraser, 5), (Tool::Fill, 3), (Tool::Place, 7)] {
+            // (Remove and Move change nothing on bare ground; their own tests cover them.)
             let (mut world, mut editor) = (field(), MapEditor::new());
             (editor.tool, editor.size, editor.terrain) = (tool, size, Terrain::Sand);
             let at = Vec2::new(4.3, 5.8);
@@ -230,6 +254,81 @@ mod tests {
         editor.undo(&mut world);
         editor.undo(&mut world);
         assert_eq!(world.props_in(0, 0, 10, 10).count(), 0);
+    }
+
+    /// Where the one prop of `kind` on the field stands.
+    fn where_is(world: &World, kind: PropKind) -> Vec<(i32, i32)> {
+        world.props_in(-5, -5, 15, 15).filter(|p| p.kind == kind).map(|p| (p.x, p.y)).collect()
+    }
+
+    #[test]
+    fn the_move_tool_carries_a_prop_to_where_the_button_comes_up() {
+        let (mut world, mut editor) = (field(), MapEditor::new());
+        world.place_prop(PropKind::Tree, 2, 2);
+        editor.tool = Tool::Move;
+        editor.press(&mut world, Vec2::new(2.4, 2.6));
+        assert_eq!(editor.carrying(), Some((2, 2)));
+        // It follows the pointer as it goes.
+        editor.drag(&mut world, Vec2::new(3.5, 2.5));
+        assert_eq!(where_is(&world, PropKind::Tree), vec![(3, 2)]);
+        editor.drag(&mut world, Vec2::new(7.5, 6.5));
+        editor.release();
+        assert_eq!(where_is(&world, PropKind::Tree), vec![(7, 6)]);
+        assert_eq!(editor.carrying(), None);
+
+        // The whole carry is one step.
+        assert!(editor.undo(&mut world));
+        assert_eq!(where_is(&world, PropKind::Tree), vec![(2, 2)]);
+        assert!(!editor.undo(&mut world));
+        assert!(editor.redo(&mut world));
+        assert_eq!(where_is(&world, PropKind::Tree), vec![(7, 6)]);
+    }
+
+    #[test]
+    fn a_carried_prop_waits_at_the_edge_of_where_it_cannot_stand() {
+        let (mut world, mut editor) = (field(), MapEditor::new());
+        world.place_prop(PropKind::Tree, 2, 2);
+        world.place_prop(PropKind::Rock, 5, 2);
+        editor.tool = Tool::Move;
+        editor.press(&mut world, Vec2::new(2.5, 2.5));
+        editor.drag(&mut world, Vec2::new(4.5, 2.5));
+        // Over the rock, then off the map: it stays on its last good tile.
+        editor.drag(&mut world, Vec2::new(5.5, 2.5));
+        assert_eq!(where_is(&world, PropKind::Tree), vec![(4, 2)]);
+        editor.drag(&mut world, Vec2::new(-3.5, 2.5));
+        assert_eq!(where_is(&world, PropKind::Tree), vec![(4, 2)]);
+        assert_eq!(where_is(&world, PropKind::Rock), vec![(5, 2)], "the rock was not disturbed");
+        // Back over good ground it comes along again.
+        editor.drag(&mut world, Vec2::new(6.5, 3.5));
+        editor.release();
+        assert_eq!(where_is(&world, PropKind::Tree), vec![(6, 3)]);
+    }
+
+    #[test]
+    fn the_move_tool_on_bare_ground_carries_nothing() {
+        let (mut world, mut editor) = (field(), MapEditor::new());
+        world.place_prop(PropKind::Tree, 2, 2);
+        editor.tool = Tool::Move;
+        editor.press(&mut world, Vec2::new(6.5, 6.5));
+        assert_eq!(editor.carrying(), None);
+        // Dragging across the tree does not pick it up on the way.
+        editor.drag(&mut world, Vec2::new(2.5, 2.5));
+        editor.drag(&mut world, Vec2::new(8.5, 8.5));
+        editor.release();
+        assert_eq!(where_is(&world, PropKind::Tree), vec![(2, 2)]);
+        assert!(!editor.history.can_undo());
+    }
+
+    #[test]
+    fn a_prop_put_back_where_it_was_leaves_nothing_to_undo() {
+        let (mut world, mut editor) = (field(), MapEditor::new());
+        world.place_prop(PropKind::Rock, 4, 4);
+        editor.tool = Tool::Move;
+        editor.press(&mut world, Vec2::new(4.5, 4.5));
+        editor.drag(&mut world, Vec2::new(6.5, 4.5));
+        editor.drag(&mut world, Vec2::new(4.5, 4.5));
+        editor.release();
+        assert!(!editor.history.can_undo());
     }
 
     #[test]

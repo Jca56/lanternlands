@@ -118,9 +118,9 @@ Milestones 1 and 2, as of 2026-10-04.
 - **Decoration.** Grass tufts are scattered by a hash of the tile, on about one bare grass tile in five. They are not world data.
 - **The map.** `assets/maps/overworld/` is the real map: the game loads it and the editor saves to it. It started as `sim::testmap`, a made-up 48 x 32 map, written out once (Alva's choice); that generator stays for the tests.
 - **Map files.** One compact binary file per 32 x 32 chunk (Alva's choice), named for the chunk (`-1_0.chunk`), about 500 bytes each for the test map. Versioned, in tagged sections so layers can be added. Ground and props are stored by name, not number, so kinds can be added or reordered without breaking saved maps; an unknown name is an error, never a silent hole. Only changed chunks are written, each whole and then moved into place; a chunk erased to nothing loses its file.
-- **Map editor.** F2 docks a panel on the left (a real Lantern UI 2 area, so its edge drags): undo, redo, save; the tools (brush, eraser, fill, place, remove); the brush's width, 1 to 9 tiles; the grounds; the props with their pictures. The left button works the held tool on the world, with the tiles it would touch lit under the pointer. A whole stroke is one undo step, 500 steps deep. Quitting with unsaved changes asks first.
+- **Map editor.** F2 docks a panel on the left (a real Lantern UI 2 area, so its edge drags): undo, redo, save; the tools (brush, eraser, fill, place, remove, move); the brush's width, 1 to 9 tiles; the grounds; the props with their pictures. The left button works the held tool on the world, with the tiles it would touch lit under the pointer. A whole stroke is one undo step, 500 steps deep. Quitting with unsaved changes asks first.
 - **Controls for now.** Wheel zooms about the pointer, middle-drag or arrows / WASD move the view, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
-- **How it is checked.** 111 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map.
+- **How it is checked.** 120 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map.
 
 ### Calls Claude made, Alva's to overrule
 
@@ -137,7 +137,8 @@ Milestones 1 and 2, as of 2026-10-04.
 11. Placing a prop on a tile that has one replaces it.
 12. Picking a ground takes up the brush (or keeps the fill if that is held); picking a prop takes up the place tool.
 13. While editing, the view may leave the map by half a screen, to paint new ground past its edge.
-14. Props are still the four placeholder kinds. They become data-defined objects when they start to do things (mining, picking).
+14. The move tool carries the prop under the pointer tile by tile: it follows onto any tile it can stand on (ground, nothing there already) and waits on its last good tile over those it cannot. It never replaces another prop.
+15. Props are still the four placeholder kinds. They become data-defined objects when they start to do things (mining, picking).
 
 ## Open questions
 

@@ -9,12 +9,12 @@ use lntrn_core::{log_error, log_info};
 use lntrn_math::{Color, Rect, Vec2};
 use lntrn_render::{Gpu, Images, TexDesc, wgpu};
 use lntrn_ui::keymap::CTX_WINDOW;
-use lntrn_ui::{Action, AreaCx, Axis, Dialog, Host, HostCx, Key, KeyConfig, KeyItem, KeyPress, Modifiers, Sense, Shell, ShellRequest, Trigger, Ui};
+use lntrn_ui::{Action, AreaCx, Axis, CursorIcon, Dialog, Host, HostCx, Key, KeyConfig, KeyItem, KeyPress, Modifiers, Sense, Shell, ShellRequest, Trigger, Ui};
 use sim::{PropKind, World};
 
 use crate::assets::{self, SpriteSet};
 use crate::camera::Camera;
-use crate::editor::MapEditor;
+use crate::editor::{MapEditor, Tool};
 use crate::panel::{self, Asked, Pictures};
 use crate::render::WorldRenderer;
 use crate::scene::{Look, Scene};
@@ -221,8 +221,19 @@ impl Game {
             self.editor.release();
         }
         if hand.hovered || hand.held {
+            if self.editor.tool == Tool::Move {
+                // A hand over what can be picked up, a closed one carrying it.
+                if self.editor.carrying().is_some() {
+                    ui.state.cursor_icon = CursorIcon::Grabbing;
+                } else if self.world.prop_at(at.x.floor() as i32, at.y.floor() as i32).is_some() {
+                    ui.state.cursor_icon = CursorIcon::Pointer;
+                }
+            }
+            // A carried prop is lit where it stands: under the pointer,
+            // unless it cannot stand there.
+            let lit = self.editor.carrying().map_or_else(|| self.editor.footprint(at), |tile| vec![tile]);
             let (fill, line) = (Color::rgba(1.0, 1.0, 1.0, 0.25), Color::rgba(1.0, 1.0, 1.0, 0.7));
-            for (x, y) in self.editor.footprint(at) {
+            for (x, y) in lit {
                 let corner = |x: i32, y: i32| self.camera.to_screen(Vec2::new(x as f64, y as f64), self.view, self.scale);
                 let tile = Rect::new(corner(x, y), corner(x + 1, y + 1)).round();
                 ui.draw.rect(tile, fill);

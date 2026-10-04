@@ -168,7 +168,7 @@ fn the_panels_rows_pick_what_the_next_click_does() {
     key(&mut h, &mut shell, &mut game, Key::F(2), Modifiers::NONE);
     let row = panel_row(&h, &shell, "Rock");
     click(&mut h, &mut shell, &mut game, row);
-    assert_eq!((game.editor.tool, game.editor.prop), (crate::editor::Tool::Place, PropKind::Rock));
+    assert_eq!((game.editor.tool, game.editor.prop), (Tool::Place, PropKind::Rock));
 
     // A grass tile with nothing on it, near the middle of the view.
     let (mx, my) = middle_tile(&game);
@@ -176,6 +176,49 @@ fn the_panels_rows_pick_what_the_next_click_does() {
     let at = game.camera.to_screen(Vec2::new(x as f64 + 0.5, y as f64 + 0.5), game.view, game.scale);
     click(&mut h, &mut shell, &mut game, at);
     assert_eq!(game.world.prop_at(x, y).map(|p| p.kind), Some(PropKind::Rock));
+}
+
+#[test]
+fn the_move_tool_drags_a_prop_to_another_tile_and_one_undo_puts_it_back() {
+    let (mut h, mut shell, mut game) = started("move");
+    key(&mut h, &mut shell, &mut game, Key::F(2), Modifiers::NONE);
+    let row = panel_row(&h, &shell, "Move");
+    click(&mut h, &mut shell, &mut game, row);
+    assert_eq!(game.editor.tool, Tool::Move);
+
+    // Two bare grass tiles well inside the view: a tree is stood on the
+    // first, to be carried to the second.
+    let seen = game.camera.visible(game.view.size(), game.scale).shrink(2.0);
+    let (x0, y0, x1, y1) = (seen.min.x.ceil() as i32, seen.min.y.ceil() as i32, seen.max.x.floor() as i32, seen.max.y.floor() as i32);
+    let bare: Vec<(i32, i32)> = (y0..y1).flat_map(|y| (x0..x1).map(move |x| (x, y))).filter(|&(x, y)| game.world.terrain(x, y) == Some(Terrain::Grass) && game.world.prop_at(x, y).is_none()).collect();
+    let ((px, py), (tx, ty)) = (bare[0], *bare.last().expect("bare grass in view"));
+    assert_ne!((px, py), (tx, ty));
+    assert!(game.world.place_prop(PropKind::Tree, px, py));
+    let prop = game.world.prop_at(px, py).expect("just placed");
+    let on_screen = |game: &Game, x: i32, y: i32| game.camera.to_screen(Vec2::new(x as f64 + 0.5, y as f64 + 0.5), game.view, game.scale);
+    let (from, to) = (on_screen(&game, prop.x, prop.y), on_screen(&game, tx, ty));
+    let props = game.world.props_in(-100, -100, 200, 200).count();
+
+    h.move_to(from);
+    turn(&mut h, &mut shell, &mut game);
+    h.press();
+    turn(&mut h, &mut shell, &mut game);
+    assert_eq!(game.editor.carrying(), Some((prop.x, prop.y)));
+    h.move_to(to);
+    turn(&mut h, &mut shell, &mut game);
+    assert_eq!(game.world.prop_at(tx, ty).map(|p| p.kind), Some(prop.kind), "it follows the pointer before the button is up");
+    h.release();
+    turn(&mut h, &mut shell, &mut game);
+
+    assert_eq!(game.world.prop_at(prop.x, prop.y), None);
+    assert_eq!(game.world.prop_at(tx, ty).map(|p| p.kind), Some(prop.kind));
+    assert_eq!(game.world.props_in(-100, -100, 200, 200).count(), props, "nothing was made or lost");
+    assert_eq!(game.editor.carrying(), None);
+
+    key(&mut h, &mut shell, &mut game, Key::Char('z'), Modifiers::CTRL);
+    assert_eq!(game.world.prop_at(prop.x, prop.y).map(|p| p.kind), Some(prop.kind));
+    assert_eq!(game.world.prop_at(tx, ty), None);
+    assert!(!game.editor.history.can_undo());
 }
 
 #[test]
