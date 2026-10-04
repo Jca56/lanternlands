@@ -12,9 +12,9 @@ use lntrn_ui::keymap::CTX_WINDOW;
 use lntrn_ui::{Action, AreaCx, Axis, Dialog, Host, HostCx, Key, KeyConfig, KeyItem, KeyPress, Modifiers, Shell, ShellRequest, Trigger, Ui};
 use lntrn_image::Image;
 use lntrn_ui::ImageHandle;
-use sim::{Character, Item, PropKind, Sim, TICK_SECONDS, World};
+use sim::{Character, Item, MonsterKind, PropKind, Sim, TICK_SECONDS, World};
 
-use crate::anim::Facing;
+use crate::anim::{Facing, Pose};
 use crate::assets::{self, SpriteSet};
 use crate::camera::Camera;
 use crate::editor::MapEditor;
@@ -93,8 +93,11 @@ pub struct Game {
     /// Seconds into the tick under way. Parked at a whole tick while
     /// nothing is happening, so the first thing that does starts at once.
     phase: f64,
-    /// The way the player last stepped.
+    /// Seconds into the world's tick under way.
+    world_phase: f64,
+    /// The way the player last stepped, and each monster.
     facing: Facing,
+    monster_facing: Vec<Facing>,
     /// Where the map is saved.
     map: PathBuf,
     /// Why the map did not load, until it has been said.
@@ -203,7 +206,9 @@ impl Game {
             sim,
             clock: None,
             phase: TICK_SECONDS,
+            world_phase: 0.0,
             facing: Facing::default(),
+            monster_facing: Vec::new(),
             map,
             load_error,
             camera: Camera::new(Vec2::new(x as f64 + 0.5, y as f64 + 0.5)),
@@ -400,6 +405,10 @@ impl AppHost for Game {
         }
         for (slot, image) in self.item_pictures.0.iter_mut().zip(&self.item_images) {
             *slot = image.as_ref().map(|image| images.add(gpu, image));
+        }
+        for (slot, kind) in self.pictures.monsters.iter_mut().zip(MonsterKind::ALL) {
+            let standing = self.look.monster(kind).sprite(Facing::Down, Pose::Idle);
+            *slot = standing.map(|(id, _)| images.add(gpu, self.sprites.picture(id)));
         }
         self.title_picture = self.title_image.as_ref().map(|image| images.add(gpu, image));
     }

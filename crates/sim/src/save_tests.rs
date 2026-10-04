@@ -146,3 +146,34 @@ fn odd_letters_survive_and_a_name_too_long_is_cut_between_letters() {
     let back = Saved::decode(&sim.snapshot(&long).encode()).expect("still a save").character;
     assert_eq!(back.name, "é".repeat(127));
 }
+
+#[test]
+fn a_grave_and_what_is_in_it_are_kept() {
+    let mut sim = played();
+    let mut held = Inventory::default();
+    held.add(Item::CopperOre, 9);
+    held.add(Item::GoblinTooth, 2);
+    sim.grave = Some(Grave { tile: (-3, 14), items: held.clone() });
+    let back = Saved::decode(&sim.snapshot(&hero()).encode()).expect("decodes");
+    assert_eq!(back.grave, Some(Grave { tile: (-3, 14), items: held }));
+    assert_eq!(Sim::resume(field(), &back).grave, back.grave);
+    // A save from before there were graves has none.
+    sim.grave = None;
+    assert_eq!(Saved::decode(&sim.snapshot(&hero()).encode()).unwrap().grave, None);
+}
+
+#[test]
+fn the_player_and_the_monsters_come_back_whole() {
+    let mut world = field();
+    world.set_spawn(1, 8, Some(crate::monsters::MonsterKind::Goblin));
+    let mut sim = Sim::new(world);
+    sim.player.health = 3;
+    sim.monsters[0].health = 1;
+    let saved = sim.snapshot(&hero());
+    let mut world = field();
+    world.set_spawn(1, 8, Some(crate::monsters::MonsterKind::Goblin));
+    let again = Sim::resume(world, &saved);
+    assert_eq!(again.player.health, again.max_health());
+    assert_eq!(again.monsters.len(), 1);
+    assert_eq!(again.monsters[0].health, crate::monsters::MonsterKind::Goblin.stats().health);
+}

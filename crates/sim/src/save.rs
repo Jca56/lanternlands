@@ -14,12 +14,14 @@
 //!         u8 (255 = empty), count u32
 //! "NODE"  count u32, then each: x i32, y i32, left u8, ticks until
 //!         whole again u32 (all ones = not coming back by itself)
+//! "GRAV"  x i32, y i32, then what it holds, written as a bag is
 //! ```
 //!
 //! Skills and items are written by name, so new ones can be added and
 //! the order changed without breaking a save. A section this build
 //! does not know is skipped; a name it does not know is an error.
 
+use crate::combat::Grave;
 use crate::items::{Inventory, Item, SLOTS, Stack};
 use crate::player::{Sim, Worked};
 use crate::skills::{Skill, Skills};
@@ -33,6 +35,7 @@ const PLAYER: [u8; 4] = *b"PLYR";
 const SKILLS: [u8; 4] = *b"SKIL";
 const BAG: [u8; 4] = *b"BAG ";
 const NODES: [u8; 4] = *b"NODE";
+const GRAVE: [u8; 4] = *b"GRAV";
 const NEVER: u32 = u32::MAX;
 
 /// Who a save belongs to.
@@ -62,6 +65,38 @@ pub struct Saved {
     pub skills: Skills,
     pub inventory: Inventory,
     pub nodes: Vec<SavedNode>,
+    /// Where they last died, and what waits there.
+    pub grave: Option<Grave>,
+}
+
+/// A bag as bytes: slots u16, the names in use, then for each slot a
+/// name index u8 (255 = empty) and a count u32.
+fn write_bag(out: &mut Vec<u8>, bag: &Inventory) {
+    let slots = bag.slots();
+    let (names, indices) = name_table(slots.iter().map(|slot| slot.map(|s| s.item.name())));
+    out.extend_from_slice(&(slots.len() as u16).to_le_bytes());
+    write_names(out, &names);
+    for (slot, index) in slots.iter().zip(indices) {
+        out.push(index);
+        out.extend_from_slice(&slot.map_or(0, |s| s.count).to_le_bytes());
+    }
+}
+
+fn read_bag(section: &mut Reader) -> Result<Inventory, String> {
+    let slots = section.u16()? as usize;
+    if slots > SLOTS {
+        return Err(format!("its bag has {slots} slots; this build's has {SLOTS}"));
+    }
+    let names = section.names("item", Item::from_name)?;
+    let mut bag = Inventory::default();
+    for slot in 0..slots {
+        let (index, count) = (section.u8()?, section.u32()?);
+        if index != VOID {
+            let item = *names.get(index as usize).ok_or(format!("slot {slot} holds item number {index} of {}", names.len()))?;
+            bag.set_slot(slot, Some(Stack { item, count }));
+        }
+    }
+    Ok(bag)
 }
 
 impl Saved {
@@ -83,28 +118,25 @@ impl Saved {
         }
 
         let mut bag = Vec::new();
-        let slots = self.inventory.slots();
-        let (names, indices) = name_table(slots.iter().map(|slot| slot.map(|s| s.item.name())));
-        bag.extend_from_slice(&(slots.len() as u16).to_le_bytes());
-        write_names(&mut bag, &names);
-        for (slot, index) in slots.iter().zip(indices) {
-            bag.push(index);
-            bag.extend_from_slice(&slot.map_or(0, |s| s.count).to_le_bytes());
-        }
+        write_bag(&mut bag, &self.inventory);
 
         let mut nodes = Vec::new();
-        // In a fixed order, so the same game is always the same bytes.
-        let mut worked = self.nodes.clone();
-        worked.sort_by_key(|n| (n.at.1, n.at.0));
-        nodes.extend_from_slice(&(worked.len() as u32).to_le_bytes());
-        for node in worked {
+        nodes.extend_from_slice(&(self.nodes.len() as u32).to_le_bytes());
+        for node in &self.nodes {
             nodes.extend_from_slice(&node.at.0.to_le_bytes());
             nodes.extend_from_slice(&node.at.1.to_le_bytes());
             nodes.push(node.left);
             nodes.extend_from_slice(&node.wait.unwrap_or(NEVER).to_le_bytes());
         }
 
-        let sections = [(CHARACTER, character), (PLAYER, player), (SKILLS, skills), (BAG, bag), (NODES, nodes)];
+        let mut sections = vec![(CHARACTER, character), (PLAYER, player), (SKILLS, skills), (BAG, bag), (NODES, nodes)];
+        if let Some(grave) = &self.grave {
+            let mut held = Vec::new();
+            held.extend_from_slice(&grave.tile.0.to_le_bytes());
+            held.extend_from_slice(&grave.tile.1.to_le_bytes());
+            write_bag(&mut held, &grave.items);
+            sections.push((GRAVE, held));
+        }
         let mut out = Vec::new();
         out.extend_from_slice(&MAGIC);
         out.extend_from_slice(&VERSION.to_le_bytes());
@@ -122,7 +154,7 @@ impl Saved {
         if version != VERSION {
             return Err(format!("it is version {version}; this build reads version {VERSION}"));
         }
-        let mut saved = Saved { character: Character::default(), tile: (0, 0), steps: 0, ticks: 0, skills: Skills::default(), inventory: Inventory::default(), nodes: Vec::new() };
+        let mut saved = Saved { character: Character::default(), tile: (0, 0), steps: 0, ticks: 0, skills: Skills::default(), inventory: Inventory::default(), nodes: Vec::new(), grave: None };
         let mut seen: Vec<[u8; 4]> = Vec::new();
         for _ in 0..file.u8()? {
             let tag = file.tag()?;
@@ -149,19 +181,13 @@ impl Saved {
                     section.done("the skills")?;
                 }
                 BAG => {
-                    let slots = section.u16()? as usize;
-                    if slots > SLOTS {
-                        return Err(format!("its bag has {slots} slots; this build's has {SLOTS}"));
-                    }
-                    let names = section.names("item", Item::from_name)?;
-                    for slot in 0..slots {
-                        let (index, count) = (section.u8()?, section.u32()?);
-                        if index != VOID {
-                            let item = *names.get(index as usize).ok_or(format!("slot {slot} holds item number {index} of {}", names.len()))?;
-                            saved.inventory.set_slot(slot, Some(Stack { item, count }));
-                        }
-                    }
+                    saved.inventory = read_bag(&mut section)?;
                     section.done("the bag")?;
+                }
+                GRAVE => {
+                    let tile = (section.i32()?, section.i32()?);
+                    saved.grave = Some(Grave { tile, items: read_bag(&mut section)? });
+                    section.done("the grave")?;
                 }
                 NODES => {
                     for _ in 0..section.u32()? {
@@ -187,8 +213,10 @@ impl Saved {
 impl Sim {
     /// Everything about the game in play that a save keeps.
     pub fn snapshot(&self, character: &Character) -> Saved {
-        let nodes = self.worked.iter().map(|(&at, w)| SavedNode { at, left: w.left, wait: w.back_at.map(|back| back.saturating_sub(self.ticks).min(NEVER as u64 - 1) as u32) }).collect();
-        Saved { character: character.clone(), tile: self.player.tile, steps: self.player.steps, ticks: self.ticks, skills: self.skills.clone(), inventory: self.inventory.clone(), nodes }
+        let mut nodes: Vec<SavedNode> = self.worked.iter().map(|(&at, w)| SavedNode { at, left: w.left, wait: w.back_at.map(|back| back.saturating_sub(self.ticks).min(NEVER as u64 - 1) as u32) }).collect();
+        // Row by row, so the same game is always the same save.
+        nodes.sort_by_key(|n| (n.at.1, n.at.0));
+        Saved { character: character.clone(), tile: self.player.tile, steps: self.player.steps, ticks: self.ticks, skills: self.skills.clone(), inventory: self.inventory.clone(), nodes, grave: self.grave.clone() }
     }
 
     /// The game a save holds, in `world` as it is now. The map may have
@@ -201,6 +229,7 @@ impl Sim {
         sim.ticks = saved.ticks;
         sim.skills = saved.skills.clone();
         sim.inventory = saved.inventory.clone();
+        sim.grave = saved.grave.clone();
         for node in &saved.nodes {
             let back_at = node.wait.map(|wait| saved.ticks + wait as u64);
             sim.worked.insert(node.at, Worked { left: node.left, back_at });

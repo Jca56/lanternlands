@@ -337,10 +337,12 @@ anchor = [4.5, 6]
     }
 
     /// An anchor is where the sprite touches the ground: inside its box,
-    /// in the lower half, and not far off its middle.
+    /// in the lower half, and not far off its middle. What lies flat on
+    /// the ground is anchored by its own middle instead.
     #[test]
     fn every_anchor_is_at_the_foot_of_its_sprite() {
         let (manifest, dir) = shipped();
+        const FLAT: [&str; 1] = ["target_ring"];
         for def in &manifest.sprites {
             let [w, h] = match def.rect {
                 Some([_, _, w, h]) => [w as f64, h as f64],
@@ -350,6 +352,10 @@ anchor = [4.5, 6]
                 }
             };
             let [ax, ay] = def.anchor;
+            if FLAT.contains(&def.name.as_str()) {
+                assert_eq!([ax, ay], [w * 0.5, h * 0.5], "{}: anchored off its middle", def.name);
+                continue;
+            }
             assert!(ay > h * 0.5 && ay <= h, "{}: anchor y {ay} is not in the lower half of {h}", def.name);
             assert!((ax - w * 0.5).abs() <= w * 0.2, "{}: anchor x {ax} is far from the middle of {w}", def.name);
         }

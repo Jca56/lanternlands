@@ -177,7 +177,13 @@ fn a_drag_paints_a_line_as_one_step() {
 fn the_panels_rows_pick_what_the_next_click_does() {
     let (mut h, mut shell, mut game) = started("rows");
     key(&mut h, &mut shell, &mut game, Key::F(2), Modifiers::NONE);
+    // The props are below the fold in a window this short: scroll to them.
+    h.move_to(Vec2::new(200.0, 500.0));
+    h.wheel(-8.0);
+    turn(&mut h, &mut shell, &mut game);
+    turn(&mut h, &mut shell, &mut game);
     let row = panel_row(&h, &shell, "Rock");
+    assert!(row.y < WINDOW.y, "the Rock row scrolled into view: {row:?}");
     click(&mut h, &mut shell, &mut game, row);
     assert_eq!((game.editor.tool, game.editor.prop), (Tool::Place, PropKind::Rock));
 
@@ -316,3 +322,9 @@ mod frame;
 
 #[path = "app_title_tests.rs"]
 mod titles;
+
+#[path = "app_fight_tests.rs"]
+mod fights;
+
+#[path = "app_fight_frame_tests.rs"]
+mod fight_frames;

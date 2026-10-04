@@ -11,7 +11,7 @@ use super::*;
 
 /// Draw the frame the game would show now. `None`, and a line saying
 /// so, on a machine with no GPU.
-fn snap(name: &str, h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game) -> Option<Image> {
+pub(super) fn snap(name: &str, h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game) -> Option<Image> {
     let Some((gpu, _turn)) = crate::render::tests::gpu() else {
         eprintln!("SKIPPED {name}: no GPU to draw with");
         return None;
@@ -57,25 +57,25 @@ fn snap(name: &str, h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game) -
     Some(image)
 }
 
-fn rgb(image: &Image, at: Vec2) -> [u8; 3] {
+pub(super) fn rgb(image: &Image, at: Vec2) -> [u8; 3] {
     let [r, g, b, _] = image.pixel(at.x as u32, at.y as u32);
     [r, g, b]
 }
 
-fn near(got: [u8; 3], want: [u8; 3], tolerance: u8) -> bool {
+pub(super) fn near(got: [u8; 3], want: [u8; 3], tolerance: u8) -> bool {
     got.iter().zip(&want).all(|(g, w)| g.abs_diff(*w) <= tolerance)
 }
 
-const GRASS: [u8; 3] = [0x73, 0xa1, 0x4c];
+pub(super) const GRASS: [u8; 3] = [0x73, 0xa1, 0x4c];
 const COPPER: [u8; 3] = [0xc7, 0x82, 0x46];
 
 /// How many pixels inside `rect` are within `tolerance` of a colour.
-fn count(image: &Image, rect: Rect, colour: [u8; 3], tolerance: u8) -> usize {
+pub(super) fn count(image: &Image, rect: Rect, colour: [u8; 3], tolerance: u8) -> usize {
     let (x0, y0, x1, y1) = (rect.min.x.ceil() as u32, rect.min.y.ceil() as u32, rect.max.x.floor() as u32, rect.max.y.floor() as u32);
     (y0..y1).flat_map(|y| (x0..x1).map(move |x| (x, y))).filter(|&(x, y)| near(rgb(image, Vec2::new(x as f64, y as f64)), colour, tolerance)).count()
 }
 
-fn body(shell: &Shell<Game>, view: View) -> WidgetId {
+pub(super) fn body(shell: &Shell<Game>, view: View) -> WidgetId {
     WidgetId::ROOT.with_u64(shell.screen.target(view).expect("on screen") as u64).with("body")
 }
 

@@ -37,6 +37,13 @@ fn blocks_between(a: (i32, i32), b: (i32, i32)) -> i32 {
 /// far to search) the way leads to the reachable tile nearest it
 /// instead. Empty when there is nowhere better to go than `from`.
 pub fn find(world: &World, from: (i32, i32), to: (i32, i32)) -> Vec<(i32, i32)> {
+    find_around(world, from, to, &|_| false)
+}
+
+/// The same, going round every tile that is `taken`: somebody stands
+/// there, and a tile holds one body. `to` itself may be taken; the way
+/// then ends on it, for whoever walks it to stop a step short.
+pub fn find_around(world: &World, from: (i32, i32), to: (i32, i32), taken: &dyn Fn((i32, i32)) -> bool) -> Vec<(i32, i32)> {
     // A*: `steps` taken so far plus the fewest that could remain. Among
     // equals the one fewer blocks from the goal goes first, which is
     // what makes the way diagonal first, and the oldest after that, so
@@ -58,7 +65,7 @@ pub fn find(world: &World, from: (i32, i32), to: (i32, i32)) -> Vec<(i32, i32)> 
         let so_far = steps[&tile];
         for step in STEPS {
             let next = (tile.0 + step.0, tile.1 + step.1);
-            if !can_step(world, tile, step) || steps.get(&next).is_some_and(|&known| known <= so_far + 1) {
+            if !can_step(world, tile, step) || (next != to && taken(next)) || steps.get(&next).is_some_and(|&known| known <= so_far + 1) {
                 continue;
             }
             steps.insert(next, so_far + 1);
@@ -125,6 +132,22 @@ mod tests {
         assert_eq!(find(&w, (0, 0), (5, 2)), vec![(1, 1), (2, 2), (3, 2), (4, 2), (5, 2)]);
         assert_eq!(find(&w, (6, 3), (6, 0)), vec![(6, 2), (6, 1), (6, 0)]);
         assert_eq!(find(&w, (3, 3), (3, 3)), vec![]);
+    }
+
+    #[test]
+    fn a_taken_tile_is_gone_round_and_a_taken_goal_is_still_led_to() {
+        let w = world(&["........", "........", "........"]);
+        let taken = |tile: (i32, i32)| tile == (3, 1) || tile == (6, 1);
+        let way = find_around(&w, (0, 1), (5, 1), &taken);
+        assert!(!way.contains(&(3, 1)), "{way:?}");
+        assert_eq!((way.len(), way.last()), (5, Some(&(5, 1))));
+        assert!(legal(&w, (0, 1), &way));
+        // The goal itself may be taken: the way ends on it.
+        let way = find_around(&w, (0, 1), (6, 1), &taken);
+        assert_eq!(way.last(), Some(&(6, 1)));
+        assert!(!way.contains(&(3, 1)));
+        // With nothing taken it is the plain search.
+        assert_eq!(find_around(&w, (0, 1), (5, 1), &|_| false), find(&w, (0, 1), (5, 1)));
     }
 
     #[test]

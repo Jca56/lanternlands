@@ -51,7 +51,7 @@ fn only_what_changed_is_written() {
     assert_eq!(fs::read(dir.join("1_0.chunk")).unwrap(), untouched);
     let back = World::load(&dir).unwrap();
     assert_eq!(back.tile(3, 3).terrain, Some(Terrain::Water));
-    assert_eq!(back.tile(-1, -40), Tile { terrain: Some(Terrain::Sand), prop: Some(PropKind::Rock), marker: None });
+    assert_eq!(back.tile(-1, -40), Tile { terrain: Some(Terrain::Sand), prop: Some(PropKind::Rock), marker: None, spawn: None });
 }
 
 #[test]

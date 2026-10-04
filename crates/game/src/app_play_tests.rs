@@ -239,31 +239,51 @@ fn clicking_a_rock_mines_it_out_into_the_bag() {
     assert!(game.sim.is_spent(rock), "the rock was mined out");
     assert_eq!(game.sim.inventory.count(Item::CopperOre), 3);
     assert_eq!(game.sim.skills.level(Skill::Mining), 2);
-    assert_eq!(floated, vec!["+1 Copper ore", "+12 Mining xp"], "what was got floated up from the player");
+    assert_eq!(floated, vec!["+1 Copper ore"], "what was got floated up from the player, and no experience with it");
     assert_eq!(game.sim.player.tile, (rock.0 - 1, rock.1), "they stood beside it");
     assert_eq!(game.facing, Facing::Right, "facing it");
     assert_eq!(game.sim.world.prop_at(rock.0, rock.1).map(|p| p.kind), Some(PropKind::Rock), "the rock is still a rock on the map");
 }
 
+/// The pose the player is drawn in.
+pub(super) fn pose_of(game: &Game) -> Option<Pose> {
+    let drawn = game.extras().last().copied()?;
+    Pose::ALL.into_iter().find(|&pose| game.look.player.sprite(game.facing, pose) == Some((drawn.sprite, drawn.flip)))
+}
+
+/// How many separate stretches of `pose` there are in a row of frames.
+pub(super) fn runs(poses: &[Pose], pose: Pose) -> usize {
+    poses.iter().enumerate().filter(|&(i, p)| *p == pose && (i == 0 || poses[i - 1] != pose)).count()
+}
+
 #[test]
-fn the_player_is_drawn_at_work_while_mining_and_idle_after() {
+fn mining_is_one_swing_for_each_roll_and_standing_ready_between() {
     let (mut h, mut shell, mut game, rock) = at_a_rock("work_pose");
     press_tile(&mut h, &mut shell, &mut game, rock);
-    pass(&mut h, &mut shell, &mut game, 1.0);
-    assert!(game.sim.player.activity().is_some());
-    let walk = game.look.player;
-    let work = [Pose::WorkA, Pose::WorkB].map(|pose| walk.sprite(Facing::Right, pose).unwrap().0);
-    let mut seen = std::collections::HashSet::new();
-    for _ in 0..16 {
+    let (mut poses, mut rolls, mut swung) = (Vec::new(), 0, false);
+    for _ in 0..2400 {
         h.advance(0.05);
         turn(&mut h, &mut shell, &mut game);
-        if game.sim.player.activity().is_some() {
-            seen.insert(game.extras().last().unwrap().sprite);
+        rolls += (game.sim.player.swung && !swung) as usize;
+        swung = game.sim.player.swung;
+        poses.push(pose_of(&game).expect("the player is drawn"));
+        if !game.sim.player.busy() && !game.sim.player.swung {
+            break;
         }
     }
-    assert!(work.iter().all(|sprite| seen.contains(sprite)) && seen.len() == 2, "both drawings of the swing, and only those");
-    pass(&mut h, &mut shell, &mut game, 40.0);
-    assert_eq!(game.extras().last().unwrap().sprite, walk.sprite(Facing::Right, Pose::Idle).unwrap().0);
+    assert!(rolls >= 3, "the rock was mined out: {rolls} swings");
+    assert_eq!(runs(&poses, Pose::WorkB), rolls, "one strike for each swing, the last one too");
+    assert_eq!(runs(&poses, Pose::WorkA), rolls, "and one drawing back before each");
+    for (i, pose) in poses.iter().enumerate().skip(1) {
+        if *pose == Pose::WorkB && poses[i - 1] != Pose::WorkB {
+            assert_eq!(poses[i - 1], Pose::WorkA, "a strike follows its drawing back");
+        }
+    }
+    let at_work = poses.iter().filter(|p| matches!(p, Pose::WorkA | Pose::WorkB)).count();
+    let ready = poses.iter().filter(|p| **p == Pose::Idle).count();
+    assert!(ready > at_work, "more of the time is spent standing ready ({ready} frames) than swinging ({at_work})");
+    assert_eq!(poses.last(), Some(&Pose::Idle));
+    assert_eq!(game.facing, Facing::Right);
 }
 
 #[test]

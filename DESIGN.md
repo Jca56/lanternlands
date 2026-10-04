@@ -28,7 +28,10 @@ Locked with Alva on 2026-10-04.
 | Art | Bold flat shapes: thick dark outlines, flat colours, big readable silhouettes. Drawn in Lantern Studio 3. Palette: B Earthy (see Art) |
 | World building | In-game map editor (toggle-able mode), our own map file format |
 | Combat styles | Melee / ranged / magic triangle designed in from day one; melee gets content first |
-| Combat depth | Auto-attack on ticks + abilities on a hotbar (cooldowns; mana for spells) |
+| Combat depth | Auto-attack on ticks + abilities on a hotbar (cooldowns; mana for spells). Built in that order: fighting first, abilities right after |
+| Monsters | They attack on sight: get near and they come for you. They give up when drawn too far from home |
+| Recovery | Health comes back slowly always, and quickly out of combat. Potions will be for the middle of a fight |
+| Drops | Monster parts only (Alchemy ingredients), straight into the bag. No coins or gear from monsters yet |
 | Magic | Mana-based, no runes |
 | Healing | Potions (Alchemy). Food gives small buffs, WoW-style, not healing |
 | Gathering | Quick nodes: a few ticks, loot, node respawns later. Richer and rarer nodes sit deeper in dangerous territory. A node is worked in swings, each with a chance that climbs with level; it gives a few, then is spent until it comes back |
@@ -77,7 +80,7 @@ Built so the systems can be played; Alva has not signed these numbers off.
 
 Every skill starts at level 1.
 
-**Items.** Copper ore (stacks).
+**Items.** Copper ore, goblin tooth (both stack).
 
 **Nodes.**
 
@@ -86,6 +89,23 @@ Every skill starts at level 1.
 | Copper rock | Mining | 1 | Copper ore | 3 | 3 ticks (1.2 s) | 55%, +3% a level, at most 95% | 12 each | 75 ticks (30 s) |
 
 So the first rock is level 2, and a level-1 miner empties a rock in about 6.5 s on average.
+
+**Monsters.**
+
+| Monster | Level | Health | Attack | Defence | Most a blow does | A blow every | Sees you at | Gives up at | Wanders | Leaves | Comes back |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Goblin | 2 | 12 | 1 | 1 | 2 | 4 ticks (1.6 s) | 4 tiles | 8 tiles from home | 3 tiles from home | Goblin tooth, 1 time in 2 | 60 ticks (24 s) |
+
+**Fighting.**
+
+- The player strikes every 3 ticks (1.2 s), bare-handed, from any of the eight tiles around.
+- A blow lands 60% of the time, 4% more or less for each level the attacker's Melee (a monster's Attack) is over or under the defender's Defence; never under 10% or over 95%.
+- A blow that lands does 1 up to the most it can, each as likely. The player's most is 2, plus 1 for every 3 Melee levels.
+- Health is 20, plus 6 for every Vitality level past the first.
+- Experience: 4 Melee and 1 Vitality for each point of damage done; 4 Defence for each blow that misses the player.
+- A fight lasts until 12 ticks (4.8 s) after the last blow given or taken. In one, health comes back 1 every 8 ticks; out of one, a twentieth of the whole every tick (empty to full in 8 s).
+
+Measured over 4,000 fights each: a new character against one goblin always wins, in about 15 s, down about 5 of their 20 health at the worst moment (17 at the very worst). Against two goblins at once they win about 7 times in 10.
 
 ## System sketches (proposals)
 
@@ -134,7 +154,7 @@ Muted, warm, old-school. In the test sheet B is the A panel pushed through two a
 
 ## How it is built
 
-Milestones 1 to 4 and the save game, as of 2026-10-04.
+Milestones 1 to 5 (fighting) and the save game, as of 2026-10-04.
 
 - **Layout.** A Cargo workspace: `crates/sim` (pure std: terrain, the chunked world, props and markers, pathfinding, the ticking player, the edit tools and their history, map files, a test map) and `crates/game` (the binary `explore-the-world`: camera, sprite sheet packer, scene builder, the wgpu passes, the map editor and its panel, the Lantern UI 2 host). Art sources in `art/`, what the game loads in `assets/`.
 - **Window.** Lantern UI 2 by path, unmodified. One area with no header and no title bar; the world fills it and the interface will draw over it.
@@ -144,17 +164,20 @@ Milestones 1 to 4 and the save game, as of 2026-10-04.
 - **Decoration.** Grass tufts are scattered by a hash of the tile, on about one bare grass tile in five. They are not world data.
 - **The map.** `assets/maps/overworld/` is the real map: the game loads it and the editor saves to it. It started as `sim::testmap`, a made-up 48 x 32 map, written out once (Alva's choice); that generator stays for the tests.
 - **Map files.** One compact binary file per 32 x 32 chunk (Alva's choice), named for the chunk (`-1_0.chunk`), about 500 bytes each for the test map. Versioned, in tagged sections so layers can be added. Ground and props are stored by name, not number, so kinds can be added or reordered without breaking saved maps; an unknown name is an error, never a silent hole. Only changed chunks are written, each whole and then moved into place; a chunk erased to nothing loses its file.
-- **Map editor.** F2 docks a panel on the left (a real Lantern UI 2 area, so its edge drags): undo, redo, save; the tools (brush, eraser, fill, place, remove, move, start); the brush's width, 1 to 9 tiles; the grounds; the props with their pictures. The left button works the held tool on the world, with the tiles it would touch lit under the pointer. A whole stroke is one undo step, 500 steps deep. Quitting with unsaved changes asks first.
+- **Map editor.** F2 docks a panel on the left (a real Lantern UI 2 area, so its edge drags): undo, redo, save; the tools (brush, eraser, fill, place, remove, move, start, spawn); the brush's width, 1 to 9 tiles; the grounds; the props and the monsters with their pictures. Remove takes a prop first, then a monster's home; a see-through monster stands on each home while editing. The left button works the held tool on the world, with the tiles it would touch lit under the pointer. A whole stroke is one undo step, 500 steps deep. Quitting with unsaved changes asks first.
 - **Ticks and walking.** A tick is 0.4 s and a step takes one tick (Alva's choice). Steps go eight ways; a diagonal one needs both tiles beside it free, so no corner is cut. Water, the void, trees and rocks cannot be stood on; herbs can. A click finds the shortest way (A*, diagonal first then straight) and the player follows it a tile a tick, finding a new way if something gets in it. Clicking where they cannot stand walks them to the tile right beside it. The simulation knows only tiles and ticks; the game slides the sprite between tiles over the tick.
 - **The player's sprite.** `assets/sprites/player-01.png` (source in `art/sprites/`): three drawn facings (down, up, side; left is the side mirrored), each with an idle pose and a walk of stride, pass, other stride. A tile's step is a stride then a pass, and strides take turns. A diagonal step shows the side view. The manifest's `[grids.name]` table cuts such a sheet into sprites.
 - **The view while playing.** Always on the player, gliding after them; the wheel still zooms. Nothing redraws while the player and the view are at rest.
 - **Player start.** A marker in the map (the editor's Start tool; a see-through player shows it while editing), saved in its chunk's file. With none, the player starts on the nearest standable tile to the map's middle.
 - **Skills, bag, nodes.** In `sim`: nine skills with their own experience (cap 50), a 30-slot bag (drawn 5 across, 6 down) where materials stack, and props that are nodes. Clicking a node walks the player beside it and sets them to work: a swing every few ticks, a seeded dice roll for each, experience and an item on a hit, and the node spent after it has given what it holds until its time is up. Walking off drops the work; a full bag stops it. The simulation reports what happened as events and the game decides how to show them.
-- **The interface while playing** (`hud.rs`): Skills and Bag buttons in the bottom-right corner (also K and I), panels that stand on them, what was just got floating up from the player, and what the game has to say (a level gained, a full bag) in big letters at the top. Lantern UI 2's own toasts are not used while playing: they land on the buttons.
+- **The interface while playing** (`hud.rs`): Skills and Bag buttons in the bottom-right corner (also K and I), panels that stand on them, the items just got floating up from the player, and what the game has to say (a level gained, a full bag) in big letters at the top. Lantern UI 2's own toasts are not used while playing: they land on the buttons.
+- **Monsters and fighting** (`sim::monsters`, `sim::combat`). The map says where each monster lives (the editor's Spawn tool; a fourth section in the chunk file). A monster wanders near its home, comes for a player it can see, strikes when beside them, gives up and mends when the player is too far from its home, and comes back some time after it falls. Clicking a monster walks the player to it and sets them at it from the tile beside it, following if it moves; a player set upon while doing nothing fights back by themselves. What a monster leaves goes straight into the bag. Dying leaves the bag in a grave where the player fell (kept in the save), wakes them whole at the start, and crumbles any older grave; clicking the gravestone walks back and takes what fits.
+- **Two clocks.** The world ticks steadily (monsters, health, rocks coming back) whenever there is anything for it to do. The player's own tick starts the moment they click, so a click never waits. Both are 0.4 s.
+- **Fighting on screen.** The player's health is a bar in the top-left corner with its numbers, and (Alva's ask) a bar over their own head while they are hurt or in a fight. A monster that is hurt or after the player has a bar over its head. What a blow did rises over whoever it was aimed at, in big letters: a white number or a grey "miss" over a monster the player struck at, a red "-N" or a grey "miss" over the player when a monster struck at them. The monster the player is set on has a red ring on the ground under it (`assets/sprites/target-ring.png`, drawn in the world just before the monster so it lies under its feet). The goblin's sheet (`assets/sprites/goblin-01.png`) is laid out like the player's: three facings, a walk, and a swing of its club. The player swings with the same two poses they mine with, once for each blow.
 - **More drawings.** The player's sheet gained a wind-up and a strike for each facing; a spent rock is the rock without its copper; items have 128 px icons in `assets/items/` (sources in `art/items/`).
-- **Characters and saves.** The game opens on a title screen (`title.rs`): the painting `assets/title/title-01.png` (source in `art/title/`) cut to fill the window, the game's name, three character slots and Quit. An empty slot asks for a name (1 to 16 letters) and starts a new character; a held one continues; Delete asks first. A save (`sim::save`) is one small binary file per character, `character-N.save`, in sections like a chunk file's, with skills and items by name: who they are and how long they have been played, where they stand, their skills and bag, and the nodes they left spent with the time each has left. It is written whole and then moved into place. Resuming on a map that has changed stands the player as near where they were as they can be and forgets nodes that are gone. Esc goes back to the title screen. The map belongs to no character: all three play on the same one.
-- **Controls for now.** Click to walk, or to work a rock. Esc for the title screen. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
-- **How it is checked.** 234 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels and the bag can be looked at and their pixels checked.
+- **Characters and saves.** The game opens on a title screen (`title.rs`): the painting `assets/title/title-01.png` (source in `art/title/`) cut to fill the window, the game's name, three character slots and Quit. An empty slot asks for a name (1 to 16 letters) and starts a new character; a held one continues; Delete asks first. A save (`sim::save`) is one small binary file per character, `character-N.save`, in sections like a chunk file's, with skills and items by name: who they are and how long they have been played, where they stand, their skills and bag, the nodes they left spent with the time each has left, and their grave. Health and monsters are not saved: both come back whole. It is written whole and then moved into place. Resuming on a map that has changed stands the player as near where they were as they can be and forgets nodes that are gone. Esc goes back to the title screen. The map belongs to no character: all three play on the same one.
+- **Controls for now.** Click to walk, to work a rock, to fight a monster, or to open the grave. Esc for the title screen. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
+- **How it is checked.** 287 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels, the bag, a fight and a grave can be looked at and their pixels checked. Fights are played through end to end the same way: a goblin is put beside the player and time is let pass.
 
 ### Calls Claude made, Alva's to overrule
 
@@ -173,23 +196,36 @@ Milestones 1 to 4 and the save game, as of 2026-10-04.
 13. While editing, the view may leave the map by half a screen, to paint new ground past its edge.
 14. The move tool carries the prop under the pointer tile by tile: it follows onto any tile it can stand on (ground, nothing there already) and waits on its last good tile over those it cannot. It never replaces another prop.
 15. The player is drawn without the sword: weapons come back as equipment drawn over the body, not baked into every frame.
-16. The first step after standing still starts at once instead of waiting for the next tick to come round. Nothing else ticks yet; when monsters do, whether a click waits for the tick is a feel question to revisit.
+16. The first step after standing still starts at once instead of waiting for the next tick to come round. Now that monsters tick, the world keeps a steady clock of its own and the player's starts on the click.
 17. The game stands still while the editor is open. Closing it stops the player and moves them off any ground that can no longer be stood on.
 18. While playing the view cannot be moved off the player.
 19. Esc leaves for the title screen at once, without asking: nothing can be lost, since it is all saved.
 20. Spent rocks are each character's own: one character emptying a rock does not empty it for another.
 21. A node can be worked from any of the eight tiles around it.
-22. At work the player winds up and strikes every tick, though the roll comes only when a swing is done.
+22. One swing is drawn for each roll at a rock and each blow in a fight (Alva, 2026-10-04: the constant swinging was wrong): the arm is drawn back as the tick before ends and strikes as the blow's tick begins, so the strike and its number come together. Between swings they stand ready. Monsters swing the same way.
 23. The game says things itself, at the top of the screen, rather than through Lantern UI 2's toasts.
 24. The dice are seeded from the clock when the game starts.
 25. A character's name is 1 to 16 letters.
 26. The title painting shows only what is in the game (the hero, trees, a copper rock, herbs, a path, a pond, hills and mountains): no castle or other place that has not been designed.
 27. Time played counts only while playing, not on the title screen or in the map editor.
 28. Props are still the four placeholder kinds; the rock is a copper rock. They become data-defined objects when they start to do things (mining, picking).
+29. All of the fighting numbers above, and the goblin's.
+30. Until there are towns, dying wakes the player at the map's start marker.
+31. Dying with an empty bag leaves no grave, but still crumbles an older one.
+32. A grave gives back what fits in the bag and keeps the rest.
+33. A player set upon while standing still fights back by themselves. Busy with something else (walking, mining), they carry on with it and take the blows.
+34. A monster the player strikes comes for them even from further off than it can see.
+35. Health is not saved: a character always starts a session whole, with every monster alive and at home.
+36. A dead monster is simply gone until it comes back: no body, no dying animation yet.
+37. Experience gained is not shown as it comes (Alva, 2026-10-04: it floated over the player and hid the damage numbers). Where it goes instead is an open question; the Skills panel shows the totals.
+38. A tile holds one body. The player walks round monsters and stops beside one that stands where they were going; monsters go round each other and never step onto the player; a dead monster waits to come back while someone stands on its home; a monster that finds the player on its tile (they woke there) steps off before anything else. Before this the player could end up standing on the goblin they clicked, and every number piled up in one place.
+39. The first blow lands when the player has got there: set at a monster on the tick of their last step, they strike on the next tick, as the step ends. Standing beside it already, they strike at once.
+40. The monster the player is set on (going for it, or fighting it, clicked or not) has a red ring on the ground under it for as long as it is their target; the gold ring on the ground is only for walking.
 
 ## Open questions
 
 - Bank size
+- Where experience gained is shown, now that it no longer floats over the player
 - The Skills panel's look: Alva does not like Lantern UI 2's stock progress bars there. To be redrawn as our own rows (it is one function in `hud.rs`); what they should look like is not decided
 - The XP curve's numbers (proposed above), and what each level unlocks
 - Quests and NPC dialogue: when, and how deep
@@ -206,7 +242,8 @@ Milestones 1 to 4 and the save game, as of 2026-10-04.
 3. Tick simulation, click-to-move pathfinding. **Done 2026-10-04** with full walk cycles: Alva "spent so much time just walking around"
 4. Inventory, skills and XP, Mining nodes. **Done 2026-10-04**: Alva played it ("it works!"), asked for the bag to be 5 across and 6 down, and does not like the stock progress bars in the Skills panel (to be redrawn later)
 4b. Save game: title screen, three named characters, autosave. **Done 2026-10-04**: Alva tried it ("It works!")
-5. Combat: melee auto-attack, abilities, monsters, drops, death
+5. Fighting: goblins, melee auto-attack, health, drops, death and the grave, the editor's Spawn tool. **Built 2026-10-04**, waiting for Alva to try it
+5b. Abilities: the hotbar, cooldowns
 6. Smithing and equipment
 7. Herbalism, Alchemy, potions
 8. NPCs, shops, bank, dialogue

@@ -6,15 +6,17 @@ pub const SLOTS: usize = 30;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Item {
     CopperOre,
+    GoblinTooth,
 }
 
 impl Item {
-    pub const ALL: [Item; 1] = [Item::CopperOre];
+    pub const ALL: [Item; 2] = [Item::CopperOre, Item::GoblinTooth];
 
     /// What it is called in files (its picture's name). Never change one.
     pub const fn name(self) -> &'static str {
         match self {
             Item::CopperOre => "copper_ore",
+            Item::GoblinTooth => "goblin_tooth",
         }
     }
 
@@ -22,6 +24,7 @@ impl Item {
     pub const fn label(self) -> &'static str {
         match self {
             Item::CopperOre => "Copper ore",
+            Item::GoblinTooth => "Goblin tooth",
         }
     }
 
@@ -32,7 +35,7 @@ impl Item {
     /// Whether any number of it share a slot. Materials do; gear will not.
     pub const fn stacks(self) -> bool {
         match self {
-            Item::CopperOre => true,
+            Item::CopperOre | Item::GoblinTooth => true,
         }
     }
 }
@@ -120,6 +123,11 @@ impl Inventory {
         if let Some(held) = self.slots.get_mut(slot) {
             *held = stack.filter(|s| s.count > 0);
         }
+    }
+
+    /// Whether nothing at all is carried.
+    pub fn is_empty(&self) -> bool {
+        self.slots.iter().all(Option::is_none)
     }
 
     /// Trade what two slots hold: how the player tidies the bag.

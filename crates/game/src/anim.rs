@@ -42,12 +42,20 @@ pub enum Pose {
 }
 
 impl Pose {
-    const ALL: [Pose; 6] = [Pose::Idle, Pose::StepA, Pose::Pass, Pose::StepB, Pose::WorkA, Pose::WorkB];
+    pub const ALL: [Pose; 6] = [Pose::Idle, Pose::StepA, Pose::Pass, Pose::StepB, Pose::WorkA, Pose::WorkB];
 
-    /// The pose `into` a tick for someone at work: every tick is a
-    /// drawing back and then a strike.
-    pub fn working(into: f64) -> Pose {
-        if into >= 0.5 { Pose::WorkB } else { Pose::WorkA }
+    /// The pose `into` a tick for someone who swings: the strike as the
+    /// tick it `struck` on begins, and the drawing back as the tick
+    /// before it (when one is `due`) ends, so one swing is one drawing
+    /// back and one strike. `None` the rest of the time.
+    pub fn swing(struck: bool, due: bool, into: f64) -> Option<Pose> {
+        if struck && into < 0.5 {
+            Some(Pose::WorkB)
+        } else if due && into >= 0.5 {
+            Some(Pose::WorkA)
+        } else {
+            None
+        }
     }
 
     /// The pose `into` a tick (0 at its start, 1 at its end) for someone
@@ -126,8 +134,13 @@ mod tests {
     }
 
     #[test]
-    fn a_tick_at_work_is_a_drawing_back_then_a_strike() {
-        assert_eq!((Pose::working(0.0), Pose::working(0.49), Pose::working(0.5), Pose::working(1.0)), (Pose::WorkA, Pose::WorkA, Pose::WorkB, Pose::WorkB));
+    fn a_swing_is_one_drawing_back_and_one_strike_across_two_ticks() {
+        // A swing is the end of one tick and the start of the next.
+        assert_eq!((Pose::swing(false, true, 0.49), Pose::swing(false, true, 0.5), Pose::swing(false, true, 1.0)), (None, Some(Pose::WorkA), Some(Pose::WorkA)));
+        assert_eq!((Pose::swing(true, false, 0.0), Pose::swing(true, false, 0.49), Pose::swing(true, false, 0.5)), (Some(Pose::WorkB), Some(Pose::WorkB), None));
+        assert_eq!(Pose::swing(true, true, 0.2), Some(Pose::WorkB), "struck, and due again: strike, then draw back");
+        assert_eq!(Pose::swing(true, true, 0.8), Some(Pose::WorkA));
+        assert!((0..=10).all(|i| Pose::swing(false, false, i as f64 / 10.0).is_none()));
     }
 
     #[test]

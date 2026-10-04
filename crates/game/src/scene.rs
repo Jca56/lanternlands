@@ -80,18 +80,23 @@ pub struct Look {
     herb_purple: Option<SpriteId>,
     herb_cyan: Option<SpriteId>,
     tuft: Option<SpriteId>,
+    /// What marks where the player died.
+    pub gravestone: Option<SpriteId>,
+    /// The ring on the ground under the monster the player is set on.
+    pub target_ring: Option<SpriteId>,
     pub player: WalkSprites,
+    pub goblin: WalkSprites,
 }
 
 impl Look {
     pub fn find(set: &SpriteSet) -> Look {
-        Look { tree: set.id("tree"), rock: set.id("rock"), rock_spent: set.id("rock_spent"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft"), player: WalkSprites::find(set, "player") }
+        Look { tree: set.id("tree"), rock: set.id("rock"), rock_spent: set.id("rock_spent"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft"), gravestone: set.id("gravestone"), target_ring: set.id("target_ring"), player: WalkSprites::find(set, "player"), goblin: WalkSprites::find(set, "goblin") }
     }
 
     /// The names of the sprites it looked for and did not find.
     pub fn missing(&self) -> Vec<String> {
-        let all = [("tree", self.tree), ("rock", self.rock), ("rock_spent", self.rock_spent), ("herb_purple", self.herb_purple), ("herb_cyan", self.herb_cyan), ("tuft", self.tuft)];
-        all.into_iter().filter(|(_, id)| id.is_none()).map(|(name, _)| name.to_owned()).chain(self.player.missing("player")).collect()
+        let all = [("tree", self.tree), ("rock", self.rock), ("rock_spent", self.rock_spent), ("herb_purple", self.herb_purple), ("herb_cyan", self.herb_cyan), ("tuft", self.tuft), ("gravestone", self.gravestone), ("target_ring", self.target_ring)];
+        all.into_iter().filter(|(_, id)| id.is_none()).map(|(name, _)| name.to_owned()).chain(self.player.missing("player")).chain(self.goblin.missing("goblin")).collect()
     }
 
     /// The sprite a prop is drawn with once it has given all it had.
@@ -99,6 +104,13 @@ impl Look {
         match kind {
             PropKind::Rock => self.rock_spent,
             _ => None,
+        }
+    }
+
+    /// The drawings a kind of monster is shown with.
+    pub fn monster(&self, kind: sim::MonsterKind) -> &WalkSprites {
+        match kind {
+            sim::MonsterKind::Goblin => &self.goblin,
         }
     }
 
@@ -272,8 +284,9 @@ mod tests {
     #[test]
     fn every_sprite_the_scene_asks_for_is_in_the_assets() {
         assert_eq!(Look::find(&set()).missing(), Vec::<String>::new());
-        // With no assets: the six of the map, and the player's eighteen.
-        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 24);
+        // With no assets: the eight of the map, and eighteen each for
+        // the player and the goblin.
+        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 44);
     }
 
     #[test]

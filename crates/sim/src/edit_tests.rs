@@ -80,12 +80,12 @@ fn painting_keeps_what_stands_and_erasing_takes_it() {
     world.place_prop(PropKind::Tree, 5, 5);
     let mut history = History::new();
     paint(&mut history, &mut world, (5.5, 5.5), 3, Some(Sand));
-    assert_eq!(world.tile(5, 5), Tile { terrain: Some(Sand), prop: Some(PropKind::Tree), marker: None });
+    assert_eq!(world.tile(5, 5), Tile { terrain: Some(Sand), prop: Some(PropKind::Tree), marker: None, spawn: None });
     paint(&mut history, &mut world, (5.5, 5.5), 1, None);
     assert_eq!(world.tile(5, 5), Tile::default());
     // Undo brings the tree back with its ground.
     history.undo(&mut world);
-    assert_eq!(world.tile(5, 5), Tile { terrain: Some(Grass), prop: Some(PropKind::Tree), marker: None });
+    assert_eq!(world.tile(5, 5), Tile { terrain: Some(Grass), prop: Some(PropKind::Tree), marker: None, spawn: None });
 }
 
 #[test]
@@ -309,9 +309,29 @@ fn the_tools_leave_a_marker_where_it_is_and_the_eraser_takes_it() {
     place(&mut history, &mut world, 4, 4, PropKind::HerbCyan);
     fill(&mut history, &mut world, 4, 4, Dirt);
     remove(&mut history, &mut world, 4, 4);
-    assert_eq!(world.tile(4, 4), Tile { terrain: Some(Dirt), prop: None, marker: Some(Marker::PlayerStart) });
+    assert_eq!(world.tile(4, 4), Tile { terrain: Some(Dirt), prop: None, marker: Some(Marker::PlayerStart), spawn: None });
     paint(&mut history, &mut world, (4.5, 4.5), 1, None);
     assert_eq!(world.marker(Marker::PlayerStart), None);
     history.undo(&mut world);
     assert_eq!(world.marker(Marker::PlayerStart), None, "the whole run was one step");
+}
+
+#[test]
+fn a_monsters_home_is_set_and_taken_away_each_as_a_step() {
+    use crate::monsters::MonsterKind::Goblin;
+    let mut world = field();
+    let mut history = History::new();
+    history.begin();
+    assert!(set_spawn(&mut history, &mut world, 3, 3, Some(Goblin)));
+    assert!(!set_spawn(&mut history, &mut world, -5, 3, Some(Goblin)), "no ground there");
+    history.commit();
+    // Painting under it leaves it; erasing the ground takes it.
+    paint(&mut history, &mut world, (3.5, 3.5), 1, Some(Sand));
+    assert_eq!(world.spawn_at(3, 3), Some(Goblin));
+    history.begin();
+    assert!(set_spawn(&mut history, &mut world, 3, 3, None));
+    history.commit();
+    assert_eq!(world.spawns(), vec![]);
+    history.undo(&mut world);
+    assert_eq!(world.spawns(), vec![(Goblin, 3, 3)]);
 }

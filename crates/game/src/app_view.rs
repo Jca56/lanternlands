@@ -8,6 +8,7 @@ use sim::{Activity, Event, Marker, TICK_SECONDS};
 use super::{AUTOSAVE_EVERY, Game, Mode};
 use crate::anim::{Facing, Pose};
 use crate::editor::Tool;
+use crate::hud::Sight;
 use crate::scene::Placed;
 
 /// How much one notch of the wheel zooms.
@@ -19,8 +20,11 @@ const KEY_PAN_SPEED: f64 = 1000.0;
 const LONGEST_STEP: f64 = 0.1;
 /// The longest the game's clock runs on from one frame to the next.
 const LONGEST_WAIT: f64 = 1.0;
-/// How far above their feet the top of the player's head is, in tiles.
-const HEAD_HEIGHT: f64 = 1.45;
+/// The part of a monster a click counts as on it, in tiles from its
+/// feet: this far to either side, this far up, this far down.
+const AIM_HALF_WIDTH: f64 = 0.45;
+const AIM_HEIGHT: f64 = 1.15;
+const AIM_BELOW: f64 = 0.15;
 /// How quickly the view closes on the player: the share of the gap it
 /// covers each second is all but `e` to minus this.
 const FOLLOW_RATE: f64 = 8.0;
@@ -30,6 +34,9 @@ const FOLLOW_SETTLED: f64 = 0.002;
 const GOAL_RING: Color = Color::rgba(0.757, 0.608, 0.290, 0.9);
 /// How see-through the editor's ghost of the player's start is.
 const GHOST: f32 = 0.5;
+/// How far up the screen, in tiles, what lies on the ground under
+/// someone is put, to be drawn before them. Far too little to see.
+const UNDER: f64 = 1e-4;
 
 impl Game {
     /// Which way the held keys push the view: arrows or WASD.
@@ -123,43 +130,66 @@ impl Game {
         }
     }
 
-    /// Playing: a press walks the player there or sets them to work on
-    /// what is there, the clock ticks while anything is going on, the
-    /// view glides after the player, and the interface floats over it all.
+    /// Playing: a press sets the player on what is under the pointer (a
+    /// monster to fight, a rock to work, the grave to open) or walks
+    /// them there; the world's clock and the player's tick; the view
+    /// glides after the player; and the interface floats over it all.
     fn play(&mut self, ui: &mut Ui, hand: &Response, dt: f64) {
         let at = self.camera.to_world(ui.state.pointer, self.view, self.scale);
         let under = (at.x.floor() as i32, at.y.floor() as i32);
-        if hand.hovered && self.sim.node_left(under).is_some_and(|left| left > 0) {
+        let aimed = if hand.hovered { self.monster_under(ui.state.pointer) } else { None };
+        let usable = self.sim.node_left(under).is_some_and(|left| left > 0) || self.sim.grave.as_ref().is_some_and(|g| g.tile == under);
+        if hand.hovered && (aimed.is_some() || usable) {
             ui.state.cursor_icon = CursorIcon::Pointer;
         }
         if hand.pressed {
             if !self.sim.player.busy() {
-                // From a standstill, the first tick comes at once.
+                // From a standstill, the player's first tick comes at once.
                 self.phase = TICK_SECONDS;
             }
-            self.sim.click(under);
+            match aimed {
+                Some(monster) => self.sim.attack(monster),
+                None => self.sim.click(under),
+            }
         }
-        let busy = self.sim.player.busy();
-        if busy || self.sim.waiting() {
+        // The world keeps its own time, steadily, while anything in it
+        // has something to do.
+        if self.sim.waiting() {
+            self.world_phase += dt;
+            while self.world_phase >= TICK_SECONDS {
+                self.world_phase -= TICK_SECONDS;
+                self.sim.tick_world();
+                self.face_monsters();
+            }
+        } else {
+            self.world_phase = 0.0;
+        }
+        // The player's runs only while they are doing something (or
+        // finishing a swing), so it can start the moment they do.
+        if self.sim.player.busy() || self.sim.player.swung {
             self.phase += dt;
             while self.phase >= TICK_SECONDS {
                 self.phase -= TICK_SECONDS;
-                self.sim.tick();
+                self.sim.tick_player();
                 self.face();
             }
         }
-        if !self.sim.player.busy() && !self.sim.waiting() {
+        if !self.sim.player.busy() && !self.sim.player.swung {
             self.phase = TICK_SECONDS;
         }
         let now = ui.now();
         let events = self.sim.take_events();
-        self.hud.hear(&events, now);
-        // Time at the game is time played; what is earned is saved at
-        // once, and the rest every so often.
+        self.hud.hear(&events, &self.sim, now);
+        if events.contains(&Event::Died) {
+            // They woke somewhere else: the view is there at once.
+            self.camera.center = self.player_ground();
+        }
+        // Time at the game is time played; what is earned or lost is
+        // saved at once, and the rest every so often.
         self.played += dt;
-        self.unsaved |= busy;
-        let earned = events.iter().any(|e| matches!(e, Event::Got { .. } | Event::LevelUp { .. }));
-        if earned || (self.unsaved && now - self.saved_at >= AUTOSAVE_EVERY) {
+        self.unsaved |= self.sim.player.busy();
+        let kept = events.iter().any(|e| matches!(e, Event::Got { .. } | Event::LevelUp { .. } | Event::Died | Event::GraveOpened { .. }));
+        if kept || (self.unsaved && now - self.saved_at >= AUTOSAVE_EVERY) {
             self.autosave();
         }
 
@@ -169,32 +199,67 @@ impl Game {
         let smooth = dt.min(LONGEST_STEP);
         self.camera.center = if following { self.camera.center + gap * (1.0 - (-FOLLOW_RATE * smooth).exp()) } else { target };
 
-        if let Some((x, y)) = self.sim.player.goal() {
+        // Where they are walking to is ringed on the ground; a monster
+        // they are going for is ringed itself, in the world.
+        if let Some((x, y)) = self.sim.player.goal().filter(|_| self.sim.target().is_none()) {
             let middle = self.camera.to_screen(Vec2::new(x as f64 + 0.5, y as f64 + 0.5), self.view, self.scale);
             let tile_px = self.camera.tile_px(self.scale);
             ui.draw.ring(middle, tile_px * 0.3, (tile_px * 0.06).max(2.0), GOAL_RING);
         }
-        let above_player = self.camera.to_screen(target - Vec2::new(0.0, HEAD_HEIGHT), self.view, self.scale);
-        self.hud.draw(ui, self.view, &self.sim, &self.item_pictures, above_player);
+        let (camera, view, scale) = (self.camera, self.view, self.scale);
+        let monsters = self.monster_grounds();
+        let sight = Sight { player: target, to_screen: &|world| camera.to_screen(world, view, scale), monsters: &monsters, tile_px: camera.tile_px(scale) };
+        self.hud.draw(ui, self.view, &self.sim, &self.item_pictures, &sight);
 
-        // Every frame while something moves; else only when the next
-        // tick is due, if one will change anything; else not at all.
-        if self.sim.player.busy() || following || self.hud.animating(now) {
+        // Every frame while something moves; else only when the world's
+        // next tick is due, if one will change anything; else not at all.
+        if self.sim.player.busy() || self.sim.player.swung || self.sim.stirring() || following || self.hud.animating(now) {
             ui.state.request_redraw_after(0.0);
         } else if self.sim.waiting() {
-            ui.state.request_redraw_after(TICK_SECONDS - self.phase);
+            ui.state.request_redraw_after(TICK_SECONDS - self.world_phase);
         }
     }
 
     /// Turn the player the way they last stepped, or toward what they
-    /// are working at.
+    /// are working at or fighting.
     fn face(&mut self) {
         let player = &self.sim.player;
-        let toward = match player.activity() {
-            Some(Activity::Working { at, .. }) => (at.0 - player.tile.0, at.1 - player.tile.1),
+        let toward = |at: (i32, i32)| (at.0 - player.tile.0, at.1 - player.tile.1);
+        let way = match player.activity() {
+            Some(Activity::Working { at, .. }) => toward(at),
+            Some(Activity::Fighting { target, .. }) => self.sim.monsters.get(target).map_or((0, 0), |m| toward(m.tile)),
             None => (player.tile.0 - player.from.0, player.tile.1 - player.from.1),
         };
-        self.facing = Facing::of_step(toward.0, toward.1).unwrap_or(self.facing);
+        self.facing = Facing::of_step(way.0, way.1).unwrap_or(self.facing);
+    }
+
+    /// Turn each monster the way it last stepped, or toward the player
+    /// it just swung at.
+    fn face_monsters(&mut self) {
+        self.monster_facing.resize(self.sim.monsters.len(), Facing::default());
+        let (player, now) = (self.sim.player.tile, self.sim.ticks);
+        for (i, (monster, facing)) in self.sim.monsters.iter().zip(&mut self.monster_facing).enumerate() {
+            let way = if monster.swung_at == Some(now) || self.sim.monster_swing_due(i) { (player.0 - monster.tile.0, player.1 - monster.tile.1) } else { (monster.tile.0 - monster.from.0, monster.tile.1 - monster.from.1) };
+            *facing = Facing::of_step(way.0, way.1).unwrap_or(*facing);
+        }
+    }
+
+    /// Where each monster's feet are drawn, in tiles: sliding from the
+    /// tile it left to the one it is on over the world's tick.
+    pub(super) fn monster_grounds(&self) -> Vec<Vec2> {
+        let into = (self.world_phase / TICK_SECONDS).clamp(0.0, 1.0);
+        let middle = |(x, y): (i32, i32)| Vec2::new(x as f64 + 0.5, y as f64 + 0.5);
+        self.sim.monsters.iter().map(|m| middle(m.from).lerp(middle(m.tile), into)).collect()
+    }
+
+    /// The living monster drawn under a point of the screen: the one
+    /// nearest the front, where two overlap.
+    pub(super) fn monster_under(&self, pointer: Vec2) -> Option<usize> {
+        let at = self.camera.to_world(pointer, self.view, self.scale);
+        let grounds = self.monster_grounds();
+        let over = |feet: &Vec2| (at.x - feet.x).abs() <= AIM_HALF_WIDTH && at.y >= feet.y - AIM_HEIGHT && at.y <= feet.y + AIM_BELOW;
+        let alive = |&(i, _): &(usize, &Vec2)| self.sim.monsters[i].alive();
+        grounds.iter().enumerate().filter(alive).filter(|(_, feet)| over(feet)).max_by(|a, b| a.1.y.total_cmp(&b.1.y)).map(|(i, _)| i)
     }
 
     /// Editing: the left button works the held tool on the world, and
@@ -231,22 +296,52 @@ impl Game {
         }
     }
 
-    /// What stands in the world besides the map's own props: the player
-    /// and, while editing, a ghost of them on their start.
+    /// What stands in the world besides the map's own props: the
+    /// player, the monsters, the grave; and while editing, ghosts of the
+    /// player on their start and of each monster on its home.
     pub(super) fn extras(&self) -> Vec<Placed> {
         let mut extras = Vec::new();
+        let middle = |x: i32, y: i32| Vec2::new(x as f64 + 0.5, y as f64 + 0.5);
         let walk = &self.look.player;
-        if self.editing
-            && let Some((x, y)) = self.sim.world.marker(Marker::PlayerStart)
-            && let Some((sprite, flip)) = walk.sprite(Facing::Down, Pose::Idle)
-        {
-            extras.push(Placed { sprite, ground: Vec2::new(x as f64 + 0.5, y as f64 + 0.5), flip, tint: [GHOST; 4] });
+        if self.editing {
+            if let Some((x, y)) = self.sim.world.marker(Marker::PlayerStart)
+                && let Some((sprite, flip)) = walk.sprite(Facing::Down, Pose::Idle)
+            {
+                extras.push(Placed { sprite, ground: middle(x, y), flip, tint: [GHOST; 4] });
+            }
+            for (kind, x, y) in self.sim.world.spawns() {
+                if let Some((sprite, flip)) = self.look.monster(kind).sprite(Facing::Down, Pose::Idle) {
+                    extras.push(Placed { sprite, ground: middle(x, y), flip, tint: [GHOST; 4] });
+                }
+            }
+        } else {
+            let into = (self.world_phase / TICK_SECONDS).clamp(0.0, 1.0);
+            let grounds = self.monster_grounds();
+            for (i, monster) in self.sim.monsters.iter().enumerate().filter(|(_, m)| m.alive()) {
+                if self.sim.target() == Some(i)
+                    && let Some(sprite) = self.look.target_ring
+                {
+                    // On the ground under it: drawn just before it.
+                    extras.push(Placed { sprite, ground: grounds[i] - Vec2::new(0.0, UNDER), flip: false, tint: [1.0; 4] });
+                }
+                // One swing for each blow; else a walk, a stride to
+                // each tile, the strides taking turns.
+                let swing = Pose::swing(monster.swung_at == Some(self.sim.ticks), self.sim.monster_swing_due(i), into);
+                let pose = swing.unwrap_or_else(|| Pose::at(monster.moved(), self.sim.ticks, into));
+                let facing = self.monster_facing.get(i).copied().unwrap_or_default();
+                if let Some((sprite, flip)) = self.look.monster(monster.kind).sprite(facing, pose) {
+                    extras.push(Placed { sprite, ground: grounds[i], flip, tint: [1.0; 4] });
+                }
+            }
+        }
+        if let (Some(grave), Some(sprite)) = (&self.sim.grave, self.look.gravestone) {
+            extras.push(Placed { sprite, ground: middle(grave.tile.0, grave.tile.1), flip: false, tint: [1.0; 4] });
         }
         let into = self.phase / TICK_SECONDS;
-        let pose = match self.sim.player.activity() {
-            Some(Activity::Working { .. }) => Pose::working(into),
-            None => Pose::at(self.sim.player.moved(), self.sim.player.steps, into),
-        };
+        // One swing for each blow struck or swing at a rock done, and
+        // standing ready between them.
+        let player = &self.sim.player;
+        let pose = Pose::swing(player.swung, self.sim.swing_due(), into).unwrap_or_else(|| Pose::at(player.moved(), player.steps, into));
         if let Some((sprite, flip)) = walk.sprite(self.facing, pose) {
             extras.push(Placed { sprite, ground: self.player_ground(), flip, tint: [1.0; 4] });
         }

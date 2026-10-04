@@ -13,6 +13,7 @@
 //! "PROP"  names likewise
 //!         count u16, then each prop: x u8, y u8, name index u8
 //! "MARK"  the same as "PROP", for the map's markers
+//! "SPWN"  the same again, for the tiles where monsters live
 //! ```
 //!
 //! Ground and props are written by name, not number, so kinds can be
@@ -23,6 +24,7 @@
 use std::fs;
 use std::path::Path;
 
+use crate::monsters::MonsterKind;
 use crate::terrain::Terrain;
 use crate::wire::{Reader, name_table, write_names};
 use crate::world::{AREA, CHUNK, Chunk, Marker, Prop, PropKind, VOID, World};
@@ -33,6 +35,7 @@ const VERSION: u16 = 1;
 const TERRAIN: [u8; 4] = *b"TERR";
 const PROPS: [u8; 4] = *b"PROP";
 const MARKERS: [u8; 4] = *b"MARK";
+const SPAWNS: [u8; 4] = *b"SPWN";
 
 fn file_name(key: (i32, i32)) -> String {
     format!("{}_{}.{EXTENSION}", key.0, key.1)
@@ -56,7 +59,8 @@ pub(crate) fn encode(chunk: &Chunk) -> Vec<u8> {
     let mut sections = vec![(TERRAIN, terrain)];
     let standing = chunk.props.iter().map(|p| (p.kind.name(), p.x, p.y)).collect();
     let marked = chunk.markers.iter().map(|&(m, x, y)| (m.name(), x, y)).collect();
-    for (tag, placed) in [(PROPS, standing), (MARKERS, marked)] {
+    let homes = chunk.spawns.iter().map(|&(kind, x, y)| (kind.name(), x, y)).collect();
+    for (tag, placed) in [(PROPS, standing), (MARKERS, marked), (SPAWNS, homes)] {
         if let Some(section) = placed_section(placed) {
             sections.push((tag, section));
         }
@@ -117,13 +121,14 @@ pub(crate) fn decode(bytes: &[u8], key: (i32, i32)) -> Result<Chunk, String> {
         match tag {
             TERRAIN => read_terrain(&mut section, &mut chunk)?,
             // Props need the ground they stand on, which is written first.
-            PROPS | MARKERS if !seen.contains(&TERRAIN) => return Err("something stands before its ground is laid".to_owned()),
+            PROPS | MARKERS | SPAWNS if !seen.contains(&TERRAIN) => return Err("something stands before its ground is laid".to_owned()),
             PROPS => {
                 for (kind, x, y) in read_placed(&mut section, &chunk, key, "prop", PropKind::from_name)? {
                     chunk.props.push(Prop { kind, x, y });
                 }
             }
             MARKERS => chunk.markers = read_placed(&mut section, &chunk, key, "marker", Marker::from_name)?,
+            SPAWNS => chunk.spawns = read_placed(&mut section, &chunk, key, "monster", MonsterKind::from_name)?,
             _ => {}
         }
     }
@@ -262,6 +267,7 @@ mod tests {
         // Chunk (-2, 3): its tiles start at (-64, 96).
         chunk.props = vec![Prop { kind: PropKind::Rock, x: -64 + 30, y: 96 + 2 }, Prop { kind: PropKind::Tree, x: -64 + 5, y: 96 }, Prop { kind: PropKind::HerbCyan, x: -64 + 31, y: 96 + 31 }];
         chunk.markers = vec![(Marker::PlayerStart, -64 + 9, 96 + 20)];
+        chunk.spawns = vec![(MonsterKind::Goblin, -64 + 12, 96 + 25), (MonsterKind::Goblin, -64 + 6, 96 + 4)];
         chunk
     }
 
@@ -271,7 +277,12 @@ mod tests {
             props.sort_by_key(|p| (p.y, p.x));
             props
         };
-        a.tiles == b.tiles && sorted(a) == sorted(b) && a.markers == b.markers
+        let homes = |c: &Chunk| {
+            let mut spawns = c.spawns.clone();
+            spawns.sort_by_key(|&(_, x, y)| (y, x));
+            spawns
+        };
+        a.tiles == b.tiles && sorted(a) == sorted(b) && a.markers == b.markers && homes(a) == homes(b)
     }
 
     #[test]
@@ -296,14 +307,14 @@ mod tests {
     fn plain_ground_takes_a_handful_of_bytes() {
         let grass = Chunk { tiles: Box::new([Terrain::Grass.rank(); AREA]), ..Chunk::new() };
         assert!(encode(&grass).len() < 40, "{} bytes for one run of grass", encode(&grass).len());
-        assert!(encode(&sample()).len() < 400, "{} bytes", encode(&sample()).len());
+        assert!(encode(&sample()).len() < 450, "{} bytes", encode(&sample()).len());
     }
 
     #[test]
     fn names_not_numbers_are_what_is_stored() {
         let bytes = encode(&sample());
         let has = |name: &str| bytes.windows(name.len()).any(|w| w == name.as_bytes());
-        assert!(has("grass") && has("water") && has("sand") && has("tree") && has("herb_cyan") && has("player_start"));
+        assert!(has("grass") && has("water") && has("sand") && has("tree") && has("herb_cyan") && has("player_start") && has("goblin"));
         assert!(!has("dirt"), "a ground the chunk does not use is not named");
     }
 

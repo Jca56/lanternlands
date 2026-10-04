@@ -4,7 +4,7 @@
 
 use lntrn_math::Vec2;
 use sim::edit::{self, History};
-use sim::{Marker, PropKind, Terrain, World};
+use sim::{Marker, MonsterKind, PropKind, Terrain, World};
 
 /// The widest the brush goes, in tiles.
 pub const SIZE_MAX: u32 = 9;
@@ -25,10 +25,12 @@ pub enum Tool {
     Move,
     /// Say where the player appears.
     Start,
+    /// Make a tile the home of a monster.
+    Spawn,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 7] = [Tool::Brush, Tool::Eraser, Tool::Fill, Tool::Place, Tool::Remove, Tool::Move, Tool::Start];
+    pub const ALL: [Tool; 8] = [Tool::Brush, Tool::Eraser, Tool::Fill, Tool::Place, Tool::Remove, Tool::Move, Tool::Start, Tool::Spawn];
 
     pub const fn label(self) -> &'static str {
         match self {
@@ -39,6 +41,7 @@ impl Tool {
             Tool::Remove => "Remove",
             Tool::Move => "Move",
             Tool::Start => "Start",
+            Tool::Spawn => "Spawn",
         }
     }
 
@@ -56,6 +59,8 @@ pub struct MapEditor {
     pub terrain: Terrain,
     /// What the place tool stands on a tile.
     pub prop: PropKind,
+    /// What the spawn tool makes a tile the home of.
+    pub monster: MonsterKind,
     pub history: History,
     /// Where the stroke under way last touched, in tiles.
     stroke: Option<Vec2>,
@@ -69,7 +74,7 @@ fn tile_under(at: Vec2) -> (i32, i32) {
 
 impl MapEditor {
     pub fn new() -> MapEditor {
-        MapEditor { tool: Tool::Brush, size: 1, terrain: Terrain::Grass, prop: PropKind::Tree, history: History::new(), stroke: None, held: None }
+        MapEditor { tool: Tool::Brush, size: 1, terrain: Terrain::Grass, prop: PropKind::Tree, monster: MonsterKind::Goblin, history: History::new(), stroke: None, held: None }
     }
 
     /// The tiles the held tool would change with the pointer at `at`
@@ -143,8 +148,15 @@ impl MapEditor {
             Tool::Place => {
                 edit::place(&mut self.history, world, x, y, self.prop);
             }
+            // What stands on the tile goes first; with nothing standing,
+            // a monster's home there does.
             Tool::Remove => {
-                edit::remove(&mut self.history, world, x, y);
+                if !edit::remove(&mut self.history, world, x, y) && world.spawn_at(x, y).is_some() {
+                    edit::set_spawn(&mut self.history, world, x, y, None);
+                }
+            }
+            Tool::Spawn => {
+                edit::set_spawn(&mut self.history, world, x, y, Some(self.monster));
             }
             Tool::Start => {
                 edit::set_marker(&mut self.history, world, Marker::PlayerStart, x, y);
@@ -352,6 +364,27 @@ mod tests {
         assert_eq!(world.marker(Marker::PlayerStart), Some((7, 6)));
         editor.undo(&mut world);
         assert_eq!(world.marker(Marker::PlayerStart), Some((3, 4)));
+    }
+
+    #[test]
+    fn the_spawn_tool_makes_homes_and_remove_takes_them_after_any_prop() {
+        let (mut world, mut editor) = (field(), MapEditor::new());
+        world.place_prop(PropKind::HerbCyan, 4, 4);
+        editor.tool = Tool::Spawn;
+        editor.press(&mut world, Vec2::new(4.5, 4.5));
+        editor.drag(&mut world, Vec2::new(5.5, 4.5));
+        editor.release();
+        assert_eq!(world.spawns(), vec![(MonsterKind::Goblin, 4, 4), (MonsterKind::Goblin, 5, 4)]);
+        // Remove: first the herb on the tile, then the home under it.
+        editor.tool = Tool::Remove;
+        editor.press(&mut world, Vec2::new(4.5, 4.5));
+        editor.release();
+        assert_eq!((world.prop_at(4, 4), world.spawn_at(4, 4)), (None, Some(MonsterKind::Goblin)));
+        editor.press(&mut world, Vec2::new(4.5, 4.5));
+        editor.release();
+        assert_eq!(world.spawns(), vec![(MonsterKind::Goblin, 5, 4)]);
+        editor.undo(&mut world);
+        assert_eq!(world.spawn_at(4, 4), Some(MonsterKind::Goblin));
     }
 
     #[test]

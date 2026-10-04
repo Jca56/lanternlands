@@ -295,3 +295,27 @@ fn a_rock_that_cannot_be_reached_is_not_mined_from_afar() {
     assert_eq!(sim.player.tile, (5, 2), "as near as the water lets them");
     assert_eq!(sim.inventory.count(Item::CopperOre), 0);
 }
+
+#[test]
+fn at_a_rock_swung_marks_only_the_ticks_a_swing_ends_and_due_the_tick_before() {
+    let mut sim = at_the_rock();
+    sim.click((5, 2));
+    let (mut swings, mut ticks) = (0, 0);
+    for _ in 0..200 {
+        let due = sim.swing_due();
+        sim.tick();
+        let swung = sim.take_events().iter().any(|e| matches!(e, Event::Swing { .. }));
+        assert_eq!(sim.player.swung, swung);
+        assert_eq!(due, swung, "a swing ends exactly when one was due");
+        swings += swung as u32;
+        ticks += matches!(sim.player.activity(), Some(Activity::Working { .. })) as u32;
+        if !sim.player.busy() {
+            break;
+        }
+    }
+    assert!(swings >= 3, "{swings}");
+    assert!(ticks >= swings * 2, "most ticks at the rock are not swings: {swings} in {ticks}");
+    assert!(sim.player.swung, "the swing that emptied it still counts");
+    sim.tick_player();
+    assert!(!sim.player.swung && !sim.swing_due());
+}

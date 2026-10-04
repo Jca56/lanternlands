@@ -20,6 +20,14 @@ anchor = [120, 286]
 rows = ["down", "up", "side"]
 columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
 
+# A goblin, laid out like the player: walking and swinging its club.
+[grids.goblin]
+file = "sprites/goblin-01.png"
+cell = [320, 300]
+anchor = [150, 264]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
 [sprites.tree]
 file = "sprites/objects-01.png"
 rect = [4, 24, 392, 426]
@@ -59,6 +67,11 @@ anchor = [90, 276]
 file = "sprites/objects-01.png"
 rect = [836, 580, 276, 248]
 anchor = [124, 220]
+
+# The ring on the ground under the monster the player is set on.
+[sprites.target_ring]
+file = "sprites/target-ring.png"
+anchor = [100, 100]
 
 [sprites.tuft]
 file = "sprites/tuft.png"

@@ -3,7 +3,7 @@
 
 use lntrn_math::{Color, Rect, Vec2};
 use lntrn_ui::{FILL, ImageHandle, Sense, Ui};
-use sim::{PropKind, Terrain};
+use sim::{MonsterKind, PropKind, Terrain};
 
 use crate::editor::{MapEditor, SIZE_MAX, Tool};
 use crate::palette::terrain_style;
@@ -23,6 +23,7 @@ pub enum Asked {
 #[derive(Default)]
 pub struct Pictures {
     pub props: [Option<ImageHandle>; PropKind::ALL.len()],
+    pub monsters: [Option<ImageHandle>; MonsterKind::ALL.len()],
 }
 
 pub const fn terrain_label(terrain: Terrain) -> &'static str {
@@ -147,6 +148,15 @@ pub fn draw(ui: &mut Ui, editor: &mut MapEditor, unsaved: bool, pictures: &Pictu
                 editor.tool = Tool::Place;
             }
         }
+
+        ui.heading("Monsters");
+        for (kind, picture) in MonsterKind::ALL.into_iter().zip(pictures.monsters) {
+            let picked = editor.monster == kind && editor.tool == Tool::Spawn;
+            if pick_row(ui, kind.label(), picked, Shown::Picture(picture)) {
+                editor.monster = kind;
+                editor.tool = Tool::Spawn;
+            }
+        }
     });
     asked
 }
@@ -176,7 +186,7 @@ mod tests {
 
     #[test]
     fn picking_a_tool_holds_it() {
-        let (mut h, mut editor) = (Harness::new(450.0, 1600.0), MapEditor::new());
+        let (mut h, mut editor) = (Harness::new(450.0, 1800.0), MapEditor::new());
         frame(&mut h, &mut editor, false);
         for tool in Tool::ALL {
             click(&mut h, &mut editor, false, tool.label());
@@ -186,7 +196,7 @@ mod tests {
 
     #[test]
     fn picking_a_ground_takes_up_the_brush_unless_the_fill_is_held() {
-        let (mut h, mut editor) = (Harness::new(450.0, 1600.0), MapEditor::new());
+        let (mut h, mut editor) = (Harness::new(450.0, 1800.0), MapEditor::new());
         editor.tool = Tool::Remove;
         frame(&mut h, &mut editor, false);
         click(&mut h, &mut editor, false, "Water");
@@ -198,15 +208,23 @@ mod tests {
 
     #[test]
     fn picking_a_prop_takes_up_the_place_tool() {
-        let (mut h, mut editor) = (Harness::new(450.0, 1600.0), MapEditor::new());
+        let (mut h, mut editor) = (Harness::new(450.0, 1800.0), MapEditor::new());
         frame(&mut h, &mut editor, false);
         click(&mut h, &mut editor, false, "Purple herb");
         assert_eq!((editor.prop, editor.tool), (PropKind::HerbPurple, Tool::Place));
     }
 
     #[test]
+    fn picking_a_monster_takes_up_the_spawn_tool() {
+        let (mut h, mut editor) = (Harness::new(450.0, 1800.0), MapEditor::new());
+        frame(&mut h, &mut editor, false);
+        click(&mut h, &mut editor, false, "Goblin");
+        assert_eq!((editor.monster, editor.tool), (MonsterKind::Goblin, Tool::Spawn));
+    }
+
+    #[test]
     fn save_asks_only_when_there_is_something_to_save() {
-        let (mut h, mut editor) = (Harness::new(450.0, 1600.0), MapEditor::new());
+        let (mut h, mut editor) = (Harness::new(450.0, 1800.0), MapEditor::new());
         frame(&mut h, &mut editor, false);
         assert_eq!(click(&mut h, &mut editor, false, "Save"), None);
         assert_eq!(click(&mut h, &mut editor, true, "Save"), Some(Asked::Save));
@@ -214,7 +232,7 @@ mod tests {
 
     #[test]
     fn undo_and_redo_ask_only_when_there_is_a_step_to_take() {
-        let (mut h, mut editor) = (Harness::new(450.0, 1600.0), MapEditor::new());
+        let (mut h, mut editor) = (Harness::new(450.0, 1800.0), MapEditor::new());
         let mut world = sim::World::new();
         world.set_terrain(0, 0, Terrain::Grass);
         frame(&mut h, &mut editor, false);
@@ -230,7 +248,7 @@ mod tests {
 
     #[test]
     fn every_ground_and_prop_has_a_row_with_its_own_name() {
-        let labels: Vec<&str> = Terrain::ALL.map(terrain_label).into_iter().chain(PropKind::ALL.map(prop_label)).collect();
+        let labels: Vec<&str> = Terrain::ALL.map(terrain_label).into_iter().chain(PropKind::ALL.map(prop_label)).chain(MonsterKind::ALL.map(MonsterKind::label)).chain(Tool::ALL.map(Tool::label)).collect();
         let mut unique = labels.clone();
         unique.sort();
         unique.dedup();
