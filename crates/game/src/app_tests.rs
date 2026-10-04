@@ -328,3 +328,6 @@ mod fights;
 
 #[path = "app_fight_frame_tests.rs"]
 mod fight_frames;
+
+#[path = "app_hotbar_tests.rs"]
+mod hotbars;

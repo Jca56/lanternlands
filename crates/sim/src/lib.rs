@@ -6,6 +6,7 @@
 /// How long a tick lasts, in seconds. One step on foot takes one tick.
 pub const TICK_SECONDS: f64 = 0.4;
 
+pub mod abilities;
 pub mod combat;
 pub mod edit;
 pub mod items;
@@ -23,6 +24,7 @@ pub mod testmap;
 mod wire;
 pub mod world;
 
+pub use abilities::Ability;
 pub use items::{Inventory, Item, Stack};
 pub use nodes::Node;
 pub use combat::Grave;

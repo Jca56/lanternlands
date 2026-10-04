@@ -29,6 +29,8 @@ Locked with Alva on 2026-10-04.
 | World building | In-game map editor (toggle-able mode), our own map file format |
 | Combat styles | Melee / ranged / magic triangle designed in from day one; melee gets content first |
 | Combat depth | Auto-attack on ticks + abilities on a hotbar (cooldowns; mana for spells). Built in that order: fighting first, abilities right after |
+| Abilities | Extra, on top of auto-attacks: an ability fires on the player's next tick and only its own cooldown limits it (no shared cooldown). The first four are melee: Heavy Strike, Flurry, Kick, Guard. All of them are there from the start for now; how they are unlocked is still to design |
+| Hotbar | Six big buttons along the bottom middle, worked with the keys 1 to 6 or a press |
 | Monsters | They attack on sight: get near and they come for you. They give up when drawn too far from home |
 | Recovery | Health comes back slowly always, and quickly out of combat. Potions will be for the middle of a fight |
 | Drops | Monster parts only (Alchemy ingredients), straight into the bag. No coins or gear from monsters yet |
@@ -107,6 +109,17 @@ So the first rock is level 2, and a level-1 miner empties a rock in about 6.5 s 
 
 Measured over 4,000 fights each: a new character against one goblin always wins, in about 15 s, down about 5 of their 20 health at the worst moment (17 at the very worst). Against two goblins at once they win about 7 times in 10.
 
+**Abilities.** All melee, bare-handed, usable from level 1.
+
+| Ability | What it does | Aimed | Cooldown |
+|---|---|---|---|
+| Heavy Strike | One blow that always lands, for the most a plain blow does up to twice that (2 to 4 at Melee 1) | at a monster | 20 ticks (8 s) |
+| Flurry | Three blows on three ticks, each as likely to land as a plain one, for 1 up to half a plain blow's most | at a monster | 30 ticks (12 s) |
+| Kick | The monster can neither move nor strike for 6 ticks (2.4 s). No damage; 4 Melee experience | at a monster | 38 ticks (15.2 s) |
+| Guard | For 10 ticks (4 s) blows against the player do half, rounded down, so a blow of 1 is stopped. 4 Defence experience for each blow met | nobody | 50 ticks (20 s) |
+
+Experience for the damage abilities do is the same as for plain blows.
+
 ## System sketches (proposals)
 
 - **Tick.** One constant for tick length: 0.4 s, chosen by Alva over RuneScape's 0.6 s. The simulation only advances on ticks; rendering interpolates between them so movement looks smooth.
@@ -154,7 +167,7 @@ Muted, warm, old-school. In the test sheet B is the A panel pushed through two a
 
 ## How it is built
 
-Milestones 1 to 5 (fighting) and the save game, as of 2026-10-04.
+Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 
 - **Layout.** A Cargo workspace: `crates/sim` (pure std: terrain, the chunked world, props and markers, pathfinding, the ticking player, the edit tools and their history, map files, a test map) and `crates/game` (the binary `explore-the-world`: camera, sprite sheet packer, scene builder, the wgpu passes, the map editor and its panel, the Lantern UI 2 host). Art sources in `art/`, what the game loads in `assets/`.
 - **Window.** Lantern UI 2 by path, unmodified. One area with no header and no title bar; the world fills it and the interface will draw over it.
@@ -174,10 +187,11 @@ Milestones 1 to 5 (fighting) and the save game, as of 2026-10-04.
 - **Monsters and fighting** (`sim::monsters`, `sim::combat`). The map says where each monster lives (the editor's Spawn tool; a fourth section in the chunk file). A monster wanders near its home, comes for a player it can see, strikes when beside them, gives up and mends when the player is too far from its home, and comes back some time after it falls. Clicking a monster walks the player to it and sets them at it from the tile beside it, following if it moves; a player set upon while doing nothing fights back by themselves. What a monster leaves goes straight into the bag. Dying leaves the bag in a grave where the player fell (kept in the save), wakes them whole at the start, and crumbles any older grave; clicking the gravestone walks back and takes what fits.
 - **Two clocks.** The world ticks steadily (monsters, health, rocks coming back) whenever there is anything for it to do. The player's own tick starts the moment they click, so a click never waits. Both are 0.4 s.
 - **Fighting on screen.** The player's health is a bar in the top-left corner with its numbers, and (Alva's ask) a bar over their own head while they are hurt or in a fight. A monster that is hurt or after the player has a bar over its head. What a blow did rises over whoever it was aimed at, in big letters: a white number or a grey "miss" over a monster the player struck at, a red "-N" or a grey "miss" over the player when a monster struck at them. The monster the player is set on has a red ring on the ground under it (`assets/sprites/target-ring.png`, drawn in the world just before the monster so it lies under its feet). The goblin's sheet (`assets/sprites/goblin-01.png`) is laid out like the player's: three facings, a walk, and a swing of its club. The player swings with the same two poses they mine with, once for each blow.
+- **Abilities and the hotbar** (`sim::abilities`, `hotbar.rs`). An ability asked for is used on the player's next tick, which from a standstill comes at once; one aimed at a monster waits until the player is beside it, and is let go if the monster is. Asked for with no target, it goes for the nearest monster that is after the player, or says "No target". Cooldowns are counted in the world's ticks, so they run down whatever the player does, and are not saved. The bar is six 90 px buttons on light plates (so the icons' dark outlines read), each with its key on a chip in the corner; a cooling button goes dark with the seconds left written on it, one asked for and waiting has a light edge, and Guard's has a blue edge while the guard is up. Icons are 128 px, in `assets/abilities/` (sources in `art/abilities/`). What is on the bar is fixed for now.
 - **More drawings.** The player's sheet gained a wind-up and a strike for each facing; a spent rock is the rock without its copper; items have 128 px icons in `assets/items/` (sources in `art/items/`).
 - **Characters and saves.** The game opens on a title screen (`title.rs`): the painting `assets/title/title-01.png` (source in `art/title/`) cut to fill the window, the game's name, three character slots and Quit. An empty slot asks for a name (1 to 16 letters) and starts a new character; a held one continues; Delete asks first. A save (`sim::save`) is one small binary file per character, `character-N.save`, in sections like a chunk file's, with skills and items by name: who they are and how long they have been played, where they stand, their skills and bag, the nodes they left spent with the time each has left, and their grave. Health and monsters are not saved: both come back whole. It is written whole and then moved into place. Resuming on a map that has changed stands the player as near where they were as they can be and forgets nodes that are gone. Esc goes back to the title screen. The map belongs to no character: all three play on the same one.
-- **Controls for now.** Click to walk, to work a rock, to fight a monster, or to open the grave. Esc for the title screen. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
-- **How it is checked.** 287 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels, the bag, a fight and a grave can be looked at and their pixels checked. Fights are played through end to end the same way: a goblin is put beside the player and time is let pass.
+- **Controls for now.** Click to walk, to work a rock, to fight a monster, or to open the grave. 1 to 6 for the hotbar. Esc for the title screen. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
+- **How it is checked.** 307 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels, the bag, a fight and a grave can be looked at and their pixels checked. Fights are played through end to end the same way: a goblin is put beside the player and time is let pass.
 
 ### Calls Claude made, Alva's to overrule
 
@@ -221,10 +235,16 @@ Milestones 1 to 5 (fighting) and the save game, as of 2026-10-04.
 38. A tile holds one body. The player walks round monsters and stops beside one that stands where they were going; monsters go round each other and never step onto the player; a dead monster waits to come back while someone stands on its home; a monster that finds the player on its tile (they woke there) steps off before anything else. Before this the player could end up standing on the goblin they clicked, and every number piled up in one place.
 39. The first blow lands when the player has got there: set at a monster on the tick of their last step, they strike on the next tick, as the step ends. Standing beside it already, they strike at once.
 40. The monster the player is set on (going for it, or fighting it, clicked or not) has a red ring on the ground under it for as long as it is their target; the gold ring on the ground is only for walking.
+41. Every ability number above, and which button each is on (1 Heavy Strike, 2 Flurry, 3 Kick, 4 Guard).
+42. A button fires on the press, not the release.
+43. A Kick does no damage, and a kicked monster shows only the word "stunned": no stars over its head yet.
+44. Abilities use the two swing drawings there are: no kick drawing, no guard stance yet.
+45. Dying keeps the cooldowns running but drops the guard and anything asked for.
 
 ## Open questions
 
 - Bank size
+- How abilities are unlocked (all are there from the start for now), and whether the bar can be rearranged
 - Where experience gained is shown, now that it no longer floats over the player
 - The Skills panel's look: Alva does not like Lantern UI 2's stock progress bars there. To be redrawn as our own rows (it is one function in `hud.rs`); what they should look like is not decided
 - The XP curve's numbers (proposed above), and what each level unlocks
@@ -242,8 +262,8 @@ Milestones 1 to 5 (fighting) and the save game, as of 2026-10-04.
 3. Tick simulation, click-to-move pathfinding. **Done 2026-10-04** with full walk cycles: Alva "spent so much time just walking around"
 4. Inventory, skills and XP, Mining nodes. **Done 2026-10-04**: Alva played it ("it works!"), asked for the bag to be 5 across and 6 down, and does not like the stock progress bars in the Skills panel (to be redrawn later)
 4b. Save game: title screen, three named characters, autosave. **Done 2026-10-04**: Alva tried it ("It works!")
-5. Fighting: goblins, melee auto-attack, health, drops, death and the grave, the editor's Spawn tool. **Built 2026-10-04**, waiting for Alva to try it
-5b. Abilities: the hotbar, cooldowns
+5. Fighting: goblins, melee auto-attack, health, drops, death and the grave, the editor's Spawn tool. **Done 2026-10-04**: Alva played it ("it's good", "cool!"), had the floating experience text taken out, asked for one swing per blow, a red ring on the monster clicked and a health bar over the player's own head
+5b. Abilities: the hotbar, cooldowns, Heavy Strike, Flurry, Kick, Guard. **Done 2026-10-04**: Alva played it ("super cool! Combat works nicely!")
 6. Smithing and equipment
 7. Herbalism, Alchemy, potions
 8. NPCs, shops, bank, dialogue

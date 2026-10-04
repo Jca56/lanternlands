@@ -75,6 +75,8 @@ pub struct Monster {
     pub angry: bool,
     /// The tick it last swung at the player.
     pub swung_at: Option<u64>,
+    /// The tick it can move and strike again, when it has been stunned.
+    pub stunned_until: u64,
     /// Ticks until it may attack again.
     pub(crate) cooldown: u32,
     /// The tick it comes back, while it is dead.
@@ -85,7 +87,7 @@ pub struct Monster {
 
 impl Monster {
     pub fn new(kind: MonsterKind, home: (i32, i32)) -> Monster {
-        Monster { kind, home, tile: home, from: home, health: kind.stats().health, angry: false, swung_at: None, cooldown: 0, back_at: None, wander_at: 0 }
+        Monster { kind, home, tile: home, from: home, health: kind.stats().health, angry: false, swung_at: None, stunned_until: 0, cooldown: 0, back_at: None, wander_at: 0 }
     }
 
     pub fn alive(&self) -> bool {

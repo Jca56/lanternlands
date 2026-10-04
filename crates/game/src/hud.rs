@@ -112,6 +112,13 @@ impl Hud {
                 Event::Hit { on: Who::Player, damage } => (format!("-{damage}"), None, HURT, true),
                 Event::Hit { on, damage } => (damage.to_string(), over(on), PLAIN, true),
                 Event::Miss { on } => ("miss".to_owned(), over(on), MISSED, true),
+                Event::Blocked => ("block".to_owned(), None, MISSED, true),
+                Event::Guarding => ("guard".to_owned(), None, PLAIN, true),
+                Event::Stunned { monster } => ("stunned".to_owned(), over(Who::Monster(monster)), PLAIN, true),
+                Event::NoTarget => {
+                    self.say("No target", now);
+                    continue;
+                }
                 Event::LevelUp { skill, level } => {
                     self.say(&format!("{} level {level}", skill.label()), now);
                     continue;

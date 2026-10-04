@@ -3,11 +3,12 @@
 
 use lntrn_math::{Color, Rect, Vec2};
 use lntrn_ui::{AreaCx, CursorIcon, Dialog, Key, Response, Sense, ShellRequest, Ui};
-use sim::{Activity, Event, Marker, TICK_SECONDS};
+use sim::{Ability, Activity, Event, Marker, TICK_SECONDS};
 
 use super::{AUTOSAVE_EVERY, Game, Mode};
 use crate::anim::{Facing, Pose};
 use crate::editor::Tool;
+use crate::hotbar;
 use crate::hud::Sight;
 use crate::scene::Placed;
 
@@ -164,9 +165,9 @@ impl Game {
         } else {
             self.world_phase = 0.0;
         }
-        // The player's runs only while they are doing something (or
-        // finishing a swing), so it can start the moment they do.
-        if self.sim.player.busy() || self.sim.player.swung {
+        // The player's runs only while they have something to do (or a
+        // swing to finish), so it can start the moment they do.
+        if self.sim.acting() {
             self.phase += dt;
             while self.phase >= TICK_SECONDS {
                 self.phase -= TICK_SECONDS;
@@ -174,7 +175,7 @@ impl Game {
                 self.face();
             }
         }
-        if !self.sim.player.busy() && !self.sim.player.swung {
+        if !self.sim.acting() {
             self.phase = TICK_SECONDS;
         }
         let now = ui.now();
@@ -210,14 +211,34 @@ impl Game {
         let monsters = self.monster_grounds();
         let sight = Sight { player: target, to_screen: &|world| camera.to_screen(world, view, scale), monsters: &monsters, tile_px: camera.tile_px(scale) };
         self.hud.draw(ui, self.view, &self.sim, &self.item_pictures, &sight);
+        let into = self.world_phase / TICK_SECONDS;
+        if let Some(ability) = hotbar::draw(ui, self.view, &self.sim, &self.ability_pictures, into) {
+            self.use_ability(ability);
+        }
 
         // Every frame while something moves; else only when the world's
         // next tick is due, if one will change anything; else not at all.
-        if self.sim.player.busy() || self.sim.player.swung || self.sim.stirring() || following || self.hud.animating(now) {
+        if self.sim.acting() || self.sim.cooling() || self.sim.stirring() || following || self.hud.animating(now) {
             ui.state.request_redraw_after(0.0);
         } else if self.sim.waiting() {
             ui.state.request_redraw_after(TICK_SECONDS - self.world_phase);
         }
+    }
+
+    /// Work a button of the hotbar, by its place on the bar.
+    pub(super) fn use_slot(&mut self, slot: usize) {
+        if let Some(ability) = hotbar::BAR.get(slot).copied().flatten() {
+            self.use_ability(ability);
+        }
+    }
+
+    /// Ask for an ability: used on the player's next tick, which from a
+    /// standstill comes at once.
+    fn use_ability(&mut self, ability: Ability) {
+        if !self.sim.player.busy() {
+            self.phase = TICK_SECONDS;
+        }
+        self.sim.use_ability(ability);
     }
 
     /// Turn the player the way they last stepped, or toward what they

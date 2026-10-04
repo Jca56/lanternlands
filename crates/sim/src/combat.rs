@@ -23,7 +23,7 @@ const TRICKLE_TICKS: u64 = 8;
 /// Out of one, by a twentieth of the whole every tick.
 const RECOVERY_SHARE: u32 = 20;
 /// Experience for each point of damage dealt, and for each blow avoided.
-const MELEE_XP: u32 = 4;
+pub(crate) const MELEE_XP: u32 = 4;
 const VITALITY_XP: u32 = 1;
 const DEFENCE_XP: u32 = 4;
 
@@ -41,7 +41,7 @@ pub fn hit_chance(attack: u8, defence: u8) -> f64 {
 }
 
 /// Close enough to strike: on the same tile or one of the eight around.
-fn in_reach(a: (i32, i32), b: (i32, i32)) -> bool {
+pub(crate) fn in_reach(a: (i32, i32), b: (i32, i32)) -> bool {
     (a.0 - b.0).abs() <= 1 && (a.1 - b.1).abs() <= 1
 }
 
@@ -91,15 +91,15 @@ impl Sim {
     pub fn swing_due(&self) -> bool {
         match self.player.activity {
             Some(Activity::Working { at, swing }) => self.node_at(at).is_some_and(|node| swing + 1 >= node.swing_ticks),
-            Some(Activity::Fighting { target, cooldown }) => cooldown == 0 && self.monsters.get(target).is_some_and(|m| m.alive() && in_reach(self.player.tile, m.tile)),
-            None => false,
+            Some(Activity::Fighting { target, cooldown: 0 }) => self.monsters.get(target).is_some_and(|m| m.alive() && in_reach(self.player.tile, m.tile)) || self.ability_due(),
+            _ => self.ability_due(),
         }
     }
 
     /// Whether a monster's next tick is a blow at the player, should
     /// they stay where they are.
     pub fn monster_swing_due(&self, monster: usize) -> bool {
-        self.monsters.get(monster).is_some_and(|m| m.alive() && m.angry && m.cooldown <= 1 && m.tile != self.player.tile && in_reach(m.tile, self.player.tile))
+        self.monsters.get(monster).is_some_and(|m| m.alive() && m.angry && m.cooldown <= 1 && self.ticks + 1 >= m.stunned_until && m.tile != self.player.tile && in_reach(m.tile, self.player.tile))
     }
 
     /// Whether somebody other than monster `but` stands on `tile`: the
@@ -175,7 +175,13 @@ impl Sim {
             return;
         }
         let rolled = 1 + (self.rng.next_u64() % self.max_hit() as u64) as u32;
-        let damage = rolled.min(self.monsters[target].health);
+        self.wound(target, rolled);
+    }
+
+    /// Take `damage` (or all it has left) off a monster: experience for
+    /// what was done, and its death if that was the last of it.
+    pub(crate) fn wound(&mut self, target: usize, damage: u32) {
+        let damage = damage.min(self.monsters[target].health);
         self.monsters[target].health -= damage;
         self.events.push(Event::Hit { on: Who::Monster(target), damage });
         self.gain(Skill::Melee, MELEE_XP * damage);
@@ -224,6 +230,10 @@ impl Sim {
                 }
                 continue;
             }
+            if now < monster.stunned_until {
+                // Stunned, it does nothing at all.
+                continue;
+            }
             if tile == player {
                 // However that came about (the player woke here, or
                 // the map changed), it steps off them.
@@ -265,7 +275,16 @@ impl Sim {
                 self.gain(Skill::Defence, DEFENCE_XP);
                 continue;
             }
-            let rolled = 1 + (self.rng.next_u64() % stats.max_hit as u64) as u32;
+            let mut rolled = 1 + (self.rng.next_u64() % stats.max_hit as u64) as u32;
+            if self.guard_left() > 0 {
+                // A guard takes half of it, and all of a blow of one.
+                rolled /= 2;
+                self.gain(Skill::Defence, DEFENCE_XP);
+                if rolled == 0 {
+                    self.events.push(Event::Blocked);
+                    continue;
+                }
+            }
             let damage = rolled.min(self.player.health);
             self.player.health -= damage;
             self.events.push(Event::Hit { on: Who::Player, damage });
@@ -338,6 +357,7 @@ impl Sim {
         self.player.tile = start_tile(&self.world);
         self.player.from = self.player.tile;
         self.player.health = self.max_health();
+        self.book.drop_all();
         self.last_fight = None;
         for monster in &mut self.monsters {
             monster.angry = false;

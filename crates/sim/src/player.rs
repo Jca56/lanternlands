@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, VecDeque};
 
+use crate::abilities::Book;
 use crate::combat::Grave;
 use crate::items::{Inventory, Item};
 use crate::monsters::Monster;
@@ -83,6 +84,14 @@ pub enum Event {
     Miss { on: Who },
     /// A monster was killed.
     Slain { monster: usize },
+    /// A monster was stunned: it can do nothing for a while.
+    Stunned { monster: usize },
+    /// The player put up their guard.
+    Guarding,
+    /// The guard took all of a blow.
+    Blocked,
+    /// An ability aimed at a monster was asked for with none to aim at.
+    NoTarget,
     /// The player died, and woke at the start.
     Died,
     /// An older grave crumbled, with what was in it.
@@ -143,6 +152,7 @@ pub struct Sim {
     pub grave: Option<Grave>,
     /// The world tick of the last blow given or taken.
     pub(crate) last_fight: Option<u64>,
+    pub(crate) book: Book,
     pub(crate) rng: Rng,
     pub(crate) events: Vec<Event>,
 }
@@ -179,7 +189,7 @@ impl Sim {
         let tile = start_tile(&world);
         let player = Player { tile, from: tile, steps: 0, health: 0, swung: false, path: VecDeque::new(), goal: None, intent: None, activity: None };
         let monsters = monsters_of(&world);
-        let mut sim = Sim { world, player, skills: Skills::default(), inventory: Inventory::default(), ticks: 0, worked: HashMap::new(), monsters, grave: None, last_fight: None, rng: Rng::new(0x5EED), events: Vec::new() };
+        let mut sim = Sim { world, player, skills: Skills::default(), inventory: Inventory::default(), ticks: 0, worked: HashMap::new(), monsters, grave: None, last_fight: None, book: Book::default(), rng: Rng::new(0x5EED), events: Vec::new() };
         sim.player.health = sim.max_health();
         sim
     }
@@ -213,9 +223,10 @@ impl Sim {
 
     /// Whether a tick of the world still to come will change something
     /// even with the player standing idle: a spent node coming back, a
-    /// monster going about, health mending.
+    /// monster going about, health mending, an ability's time running
+    /// down.
     pub fn waiting(&self) -> bool {
-        self.worked.values().any(|w| w.back_at.is_some()) || !self.monsters.is_empty() || self.player.health < self.max_health()
+        self.worked.values().any(|w| w.back_at.is_some()) || !self.monsters.is_empty() || self.player.health < self.max_health() || self.book.cooling(self.ticks)
     }
 
     /// Whether anything other than the player moved or struck on the
@@ -282,6 +293,7 @@ impl Sim {
         let world = &self.world;
         self.worked.retain(|&(x, y), _| world.prop_at(x, y).is_some_and(|p| p.kind.node().is_some()));
         self.monsters = monsters_of(&self.world);
+        self.book.drop_all();
         self.player.health = self.player.health.min(self.max_health());
     }
 
@@ -302,13 +314,15 @@ impl Sim {
     }
 
     /// The player's tick: the next step of their way, then what they
-    /// came to do, then a swing at it.
+    /// came to do, then the abilities asked for and a swing of their
+    /// own.
     pub fn tick_player(&mut self) {
         self.player.swung = false;
         self.step();
         self.engage(true);
         self.arrive();
         self.work();
+        self.use_abilities();
         self.fight();
     }
 

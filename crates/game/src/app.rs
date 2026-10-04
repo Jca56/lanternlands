@@ -12,12 +12,13 @@ use lntrn_ui::keymap::CTX_WINDOW;
 use lntrn_ui::{Action, AreaCx, Axis, Dialog, Host, HostCx, Key, KeyConfig, KeyItem, KeyPress, Modifiers, Shell, ShellRequest, Trigger, Ui};
 use lntrn_image::Image;
 use lntrn_ui::ImageHandle;
-use sim::{Character, Item, MonsterKind, PropKind, Sim, TICK_SECONDS, World};
+use sim::{Ability, Character, Item, MonsterKind, PropKind, Sim, TICK_SECONDS, World};
 
 use crate::anim::{Facing, Pose};
 use crate::assets::{self, SpriteSet};
 use crate::camera::Camera;
 use crate::editor::MapEditor;
+use crate::hotbar::{self, AbilityPictures};
 use crate::hud::{Hud, ItemPictures};
 use crate::panel::{self, Asked, Pictures};
 use crate::render::WorldRenderer;
@@ -35,6 +36,8 @@ const REDO: &str = "editor.redo";
 const SAVE: &str = "editor.save";
 const BAG: &str = "hud.bag";
 const SKILLS: &str = "hud.skills";
+/// The hotbar's buttons, left to right: the keys 1 to 6.
+const SLOT_KEYS: [&str; hotbar::SLOTS] = ["hud.slot.1", "hud.slot.2", "hud.slot.3", "hud.slot.4", "hud.slot.5", "hud.slot.6"];
 const TITLE: &str = "game.title";
 const CREATE: &str = "title.create";
 const DELETE: &str = "title.delete";
@@ -122,6 +125,8 @@ pub struct Game {
     /// The items' pictures: as loaded, and as the interface draws them.
     item_images: Vec<Option<Image>>,
     item_pictures: ItemPictures,
+    ability_images: Vec<Option<Image>>,
+    ability_pictures: AbilityPictures,
     editor: MapEditor,
     pictures: Pictures,
     /// The editor's panel is on screen.
@@ -167,11 +172,13 @@ impl Game {
                 (World::new(), Some(e))
             }
         };
-        let item_images = Item::ALL.map(|item| {
-            let path = dir.join(format!("items/{}.png", item.name()));
+        let picture = |folder: &str, name: &str| {
+            let path = dir.join(format!("{folder}/{name}.png"));
             let image = std::fs::read(&path).map_err(|e| e.to_string()).and_then(|bytes| lntrn_image::decode(&bytes).map_err(|e| e.to_string()));
-            image.map_err(|e| log_error!("no picture for {}: {}: {e}", item.label(), path.display())).ok()
-        });
+            image.map_err(|e| log_error!("no picture for {name}: {}: {e}", path.display())).ok()
+        };
+        let item_images = Item::ALL.map(|item| picture("items", item.name()));
+        let ability_images = Ability::ALL.map(|ability| picture("abilities", ability.name()));
         let title_path = dir.join(TITLE_PAINTING);
         let title_image = std::fs::read(&title_path).map_err(|e| e.to_string()).and_then(|bytes| lntrn_image::decode(&bytes).map_err(|e| e.to_string()));
         let title_image = title_image.map_err(|e| log_error!("no title painting: {}: {e}", title_path.display())).ok();
@@ -189,6 +196,9 @@ impl Game {
         bind(Key::Char('s'), Modifiers::CTRL, SAVE);
         bind(Key::Char('i'), Modifiers::NONE, BAG);
         bind(Key::Char('k'), Modifiers::NONE, SKILLS);
+        for (i, slot) in SLOT_KEYS.iter().enumerate() {
+            bind(Key::Char((b'1' + i as u8) as char), Modifiers::NONE, slot);
+        }
         bind(Key::Escape, Modifiers::NONE, TITLE);
         let mut game = Game {
             mode: Mode::Title,
@@ -225,6 +235,8 @@ impl Game {
             hud: Hud::default(),
             item_images: item_images.to_vec(),
             item_pictures: ItemPictures::default(),
+            ability_images: ability_images.to_vec(),
+            ability_pictures: AbilityPictures::default(),
             editor: MapEditor::new(),
             pictures: Pictures::default(),
             editing: false,
@@ -347,6 +359,7 @@ impl Host for Game {
             EDIT if playing => self.panel_wanted = Some(!self.editing),
             BAG if playing && !self.editing => self.hud.bag_open = !self.hud.bag_open,
             SKILLS if playing && !self.editing => self.hud.skills_open = !self.hud.skills_open,
+            slot if playing && !self.editing && SLOT_KEYS.contains(&slot) => self.use_slot(SLOT_KEYS.iter().position(|key| *key == slot).unwrap_or(0)),
             TITLE if playing && !self.editing => self.back_to_title(),
             CREATE => self.create_character(),
             DELETE => self.delete_character(cx),
@@ -404,6 +417,9 @@ impl AppHost for Game {
             *slot = self.look.prop(kind).map(|id| images.add(gpu, self.sprites.picture(id)));
         }
         for (slot, image) in self.item_pictures.0.iter_mut().zip(&self.item_images) {
+            *slot = image.as_ref().map(|image| images.add(gpu, image));
+        }
+        for (slot, image) in self.ability_pictures.0.iter_mut().zip(&self.ability_images) {
             *slot = image.as_ref().map(|image| images.add(gpu, image));
         }
         for (slot, kind) in self.pictures.monsters.iter_mut().zip(MonsterKind::ALL) {
