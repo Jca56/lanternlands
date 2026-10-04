@@ -7,16 +7,49 @@ pub const SLOTS: usize = 30;
 pub enum Item {
     CopperOre,
     GoblinTooth,
+    TinOre,
+    BronzeBar,
+    BronzePickaxe,
+    BronzeSword,
+    BronzeShield,
+    BronzeHelmet,
+    BronzeChestplate,
+    BronzeGreaves,
+    BronzeGauntlets,
+    BronzeBoots,
 }
 
 impl Item {
-    pub const ALL: [Item; 2] = [Item::CopperOre, Item::GoblinTooth];
+    pub const ALL: [Item; 12] = [
+        Item::CopperOre,
+        Item::GoblinTooth,
+        Item::TinOre,
+        Item::BronzeBar,
+        Item::BronzePickaxe,
+        Item::BronzeSword,
+        Item::BronzeShield,
+        Item::BronzeHelmet,
+        Item::BronzeChestplate,
+        Item::BronzeGreaves,
+        Item::BronzeGauntlets,
+        Item::BronzeBoots,
+    ];
 
     /// What it is called in files (its picture's name). Never change one.
     pub const fn name(self) -> &'static str {
         match self {
             Item::CopperOre => "copper_ore",
             Item::GoblinTooth => "goblin_tooth",
+            Item::TinOre => "tin_ore",
+            Item::BronzeBar => "bronze_bar",
+            Item::BronzePickaxe => "bronze_pickaxe",
+            Item::BronzeSword => "bronze_sword",
+            Item::BronzeShield => "bronze_shield",
+            Item::BronzeHelmet => "bronze_helmet",
+            Item::BronzeChestplate => "bronze_chestplate",
+            Item::BronzeGreaves => "bronze_greaves",
+            Item::BronzeGauntlets => "bronze_gauntlets",
+            Item::BronzeBoots => "bronze_boots",
         }
     }
 
@@ -25,6 +58,16 @@ impl Item {
         match self {
             Item::CopperOre => "Copper ore",
             Item::GoblinTooth => "Goblin tooth",
+            Item::TinOre => "Tin ore",
+            Item::BronzeBar => "Bronze bar",
+            Item::BronzePickaxe => "Bronze pickaxe",
+            Item::BronzeSword => "Bronze sword",
+            Item::BronzeShield => "Bronze shield",
+            Item::BronzeHelmet => "Bronze helmet",
+            Item::BronzeChestplate => "Bronze chestplate",
+            Item::BronzeGreaves => "Bronze greaves",
+            Item::BronzeGauntlets => "Bronze gauntlets",
+            Item::BronzeBoots => "Bronze boots",
         }
     }
 
@@ -32,10 +75,18 @@ impl Item {
         Item::ALL.into_iter().find(|i| i.name() == name)
     }
 
-    /// Whether any number of it share a slot. Materials do; gear will not.
+    /// Whether any number of it share a slot. Materials do; gear does
+    /// not.
     pub const fn stacks(self) -> bool {
+        matches!(self, Item::CopperOre | Item::GoblinTooth | Item::TinOre | Item::BronzeBar)
+    }
+
+    /// How many ticks quicker a swing at a rock is with this in the
+    /// bag: a pickaxe's worth.
+    pub const fn mining_speed(self) -> u32 {
         match self {
-            Item::CopperOre | Item::GoblinTooth => true,
+            Item::BronzePickaxe => 1,
+            _ => 0,
         }
     }
 }

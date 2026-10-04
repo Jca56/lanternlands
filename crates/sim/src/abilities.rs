@@ -211,7 +211,7 @@ impl Sim {
         self.player.swung = true;
         self.last_fight = Some(self.ticks);
         let defence = self.monsters[target].kind.stats().defence;
-        if !self.rng.chance(hit_chance(self.skills.level(Skill::Melee), defence)) {
+        if !self.rng.chance(hit_chance(self.accuracy(), defence)) {
             self.events.push(Event::Miss { on: Who::Monster(target) });
             return;
         }

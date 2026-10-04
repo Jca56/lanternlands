@@ -22,7 +22,7 @@ const LAYER: usize = 1;
 
 /// What a button with an ability on it stands on: light, so the
 /// drawings' dark outlines read.
-const PLATE: Color = Color::hex(0xc9b68a);
+pub const PLATE: Color = Color::hex(0xc9b68a);
 const PLATE_HOVER: Color = Color::hex(0xdccb9f);
 const EDGE: Color = Color::hex(0x271a1c);
 /// Round a button asked for and waiting, and round a guard that is up.

@@ -22,10 +22,13 @@ pub enum PropKind {
     Rock,
     HerbPurple,
     HerbCyan,
+    TinRock,
+    Furnace,
+    Anvil,
 }
 
 impl PropKind {
-    pub const ALL: [PropKind; 4] = [PropKind::Tree, PropKind::Rock, PropKind::HerbPurple, PropKind::HerbCyan];
+    pub const ALL: [PropKind; 7] = [PropKind::Tree, PropKind::Rock, PropKind::TinRock, PropKind::HerbPurple, PropKind::HerbCyan, PropKind::Furnace, PropKind::Anvil];
 
     /// What it is called in a map file. Never change one: saved maps
     /// hold these.
@@ -35,6 +38,9 @@ impl PropKind {
             PropKind::Rock => "rock",
             PropKind::HerbPurple => "herb_purple",
             PropKind::HerbCyan => "herb_cyan",
+            PropKind::TinRock => "tin_rock",
+            PropKind::Furnace => "furnace",
+            PropKind::Anvil => "anvil",
         }
     }
 
@@ -44,7 +50,7 @@ impl PropKind {
 
     /// Whether it is in the way of someone walking.
     pub const fn blocks(self) -> bool {
-        matches!(self, PropKind::Tree | PropKind::Rock)
+        !matches!(self, PropKind::HerbPurple | PropKind::HerbCyan)
     }
 }
 

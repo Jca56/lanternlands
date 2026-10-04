@@ -38,7 +38,10 @@ pub const fn terrain_label(terrain: Terrain) -> &'static str {
 pub const fn prop_label(kind: PropKind) -> &'static str {
     match kind {
         PropKind::Tree => "Tree",
-        PropKind::Rock => "Rock",
+        PropKind::Rock => "Copper rock",
+        PropKind::TinRock => "Tin rock",
+        PropKind::Furnace => "Furnace",
+        PropKind::Anvil => "Anvil",
         PropKind::HerbPurple => "Purple herb",
         PropKind::HerbCyan => "Cyan herb",
     }

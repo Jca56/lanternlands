@@ -28,6 +28,65 @@ anchor = [150, 264]
 rows = ["down", "up", "side"]
 columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
 
+# What the player wears, each laid out like the player's own sheet and
+# drawn over it (or, for the one called under, behind it). They are
+# drawn in plain greys and coloured by the metal they are made of.
+[grids.gear_shield_under]
+file = "sprites/gear-shield-under.png"
+cell = [240, 320]
+anchor = [120, 286]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_legs]
+file = "sprites/gear-legs.png"
+cell = [240, 320]
+anchor = [120, 286]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_feet]
+file = "sprites/gear-feet.png"
+cell = [240, 320]
+anchor = [120, 286]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_body]
+file = "sprites/gear-body.png"
+cell = [240, 320]
+anchor = [120, 286]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_hands]
+file = "sprites/gear-hands.png"
+cell = [240, 320]
+anchor = [120, 286]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_head]
+file = "sprites/gear-head.png"
+cell = [240, 320]
+anchor = [120, 286]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_shield]
+file = "sprites/gear-shield.png"
+cell = [240, 320]
+anchor = [120, 286]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_weapon]
+file = "sprites/gear-weapon.png"
+cell = [240, 320]
+anchor = [120, 286]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
 [sprites.tree]
 file = "sprites/objects-01.png"
 rect = [4, 24, 392, 426]
@@ -37,6 +96,19 @@ anchor = [196, 384]
 file = "sprites/objects-01.png"
 rect = [850, 186, 236, 216]
 anchor = [118, 186]
+
+[sprites.tin_rock]
+file = "sprites/tin-rock.png"
+anchor = [118, 186]
+
+# Where ore is smelted into bars, and where bars are hammered into gear.
+[sprites.furnace]
+file = "sprites/furnace.png"
+anchor = [130, 288]
+
+[sprites.anvil]
+file = "sprites/anvil.png"
+anchor = [120, 186]
 
 # A rock that has given all its ore, until it comes back.
 [sprites.rock_spent]

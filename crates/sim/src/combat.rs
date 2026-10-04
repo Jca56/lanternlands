@@ -60,7 +60,19 @@ impl Sim {
 
     /// The most one of the player's blows does.
     pub fn max_hit(&self) -> u32 {
-        2 + self.skills.level(Skill::Melee) as u32 / 3
+        2 + self.skills.level(Skill::Melee) as u32 / 3 + self.gear.bonus().damage
+    }
+
+    /// How sure the player's blows are: their Melee level, and what
+    /// their weapon adds to it.
+    pub fn accuracy(&self) -> u8 {
+        self.skills.level(Skill::Melee).saturating_add(self.gear.bonus().accuracy)
+    }
+
+    /// How hard the player is to hit: their Defence level, and what
+    /// their armour adds to it.
+    pub fn armour(&self) -> u8 {
+        self.skills.level(Skill::Defence).saturating_add(self.gear.bonus().armour)
     }
 
     /// Whether a blow was given or taken lately.
@@ -90,7 +102,8 @@ impl Sim {
     /// fight, or the end of a swing at what they work.
     pub fn swing_due(&self) -> bool {
         match self.player.activity {
-            Some(Activity::Working { at, swing }) => self.node_at(at).is_some_and(|node| swing + 1 >= node.swing_ticks),
+            Some(Activity::Working { at, swing }) => self.node_at(at).is_some_and(|node| swing + 1 >= self.swing_ticks(&node)),
+            Some(Activity::Making { recipe, tick, .. }) => tick + 1 >= crate::making::RECIPES[recipe].ticks,
             Some(Activity::Fighting { target, cooldown: 0 }) => self.monsters.get(target).is_some_and(|m| m.alive() && in_reach(self.player.tile, m.tile)) || self.ability_due(),
             _ => self.ability_due(),
         }
@@ -167,7 +180,7 @@ impl Sim {
         self.player.swung = true;
         self.last_fight = Some(self.ticks);
         let stats = monster.kind.stats();
-        let landed = self.rng.chance(hit_chance(self.skills.level(Skill::Melee), stats.defence));
+        let landed = self.rng.chance(hit_chance(self.accuracy(), stats.defence));
         // Struck at, it knows who its enemy is, however far it could see.
         self.monsters[target].angry = true;
         if !landed {
@@ -270,7 +283,7 @@ impl Sim {
             if !self.player.busy() {
                 self.player.activity = Some(Activity::Fighting { target: i, cooldown: 0 });
             }
-            if !self.rng.chance(hit_chance(stats.attack, self.skills.level(Skill::Defence))) {
+            if !self.rng.chance(hit_chance(stats.attack, self.armour())) {
                 self.events.push(Event::Miss { on: Who::Player });
                 self.gain(Skill::Defence, DEFENCE_XP);
                 continue;

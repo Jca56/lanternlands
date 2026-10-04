@@ -9,8 +9,9 @@ use super::{AUTOSAVE_EVERY, Game, Mode};
 use crate::anim::{Facing, Pose};
 use crate::editor::Tool;
 use crate::hotbar;
-use crate::hud::Sight;
-use crate::scene::Placed;
+use crate::hud::{Sight, Wear};
+use crate::making;
+use crate::scene::{GEAR_ORDER, Placed, metal_tint};
 
 /// How much one notch of the wheel zooms.
 const ZOOM_PER_NOTCH: f64 = 1.15;
@@ -139,7 +140,7 @@ impl Game {
         let at = self.camera.to_world(ui.state.pointer, self.view, self.scale);
         let under = (at.x.floor() as i32, at.y.floor() as i32);
         let aimed = if hand.hovered { self.monster_under(ui.state.pointer) } else { None };
-        let usable = self.sim.node_left(under).is_some_and(|left| left > 0) || self.sim.grave.as_ref().is_some_and(|g| g.tile == under);
+        let usable = self.sim.node_left(under).is_some_and(|left| left > 0) || self.sim.station_at(under).is_some() || self.sim.grave.as_ref().is_some_and(|g| g.tile == under);
         if hand.hovered && (aimed.is_some() || usable) {
             ui.state.cursor_icon = CursorIcon::Pointer;
         }
@@ -210,10 +211,25 @@ impl Game {
         let (camera, view, scale) = (self.camera, self.view, self.scale);
         let monsters = self.monster_grounds();
         let sight = Sight { player: target, to_screen: &|world| camera.to_screen(world, view, scale), monsters: &monsters, tile_px: camera.tile_px(scale) };
-        self.hud.draw(ui, self.view, &self.sim, &self.item_pictures, &sight);
+        let wear = self.hud.draw(ui, self.view, &self.sim, &self.item_pictures, &sight);
+        match wear {
+            Some(Wear::On(slot)) => self.sim.equip(slot),
+            Some(Wear::Off(slot)) => self.sim.unequip(slot),
+            None => {}
+        }
+        if wear.is_some() {
+            // What is worn is kept at once, like what is earned.
+            self.autosave();
+        }
         let into = self.world_phase / TICK_SECONDS;
         if let Some(ability) = hotbar::draw(ui, self.view, &self.sim, &self.ability_pictures, into) {
             self.use_ability(ability);
+        }
+        if let Some((recipe, count)) = making::draw(ui, self.view, &self.sim, &self.item_pictures) {
+            if !self.sim.player.busy() {
+                self.phase = TICK_SECONDS;
+            }
+            self.sim.make(recipe, count);
         }
 
         // Every frame while something moves; else only when the world's
@@ -247,7 +263,7 @@ impl Game {
         let player = &self.sim.player;
         let toward = |at: (i32, i32)| (at.0 - player.tile.0, at.1 - player.tile.1);
         let way = match player.activity() {
-            Some(Activity::Working { at, .. }) => toward(at),
+            Some(Activity::Working { at, .. } | Activity::Making { at, .. }) => toward(at),
             Some(Activity::Fighting { target, .. }) => self.sim.monsters.get(target).map_or((0, 0), |m| toward(m.tile)),
             None => (player.tile.0 - player.from.0, player.tile.1 - player.from.1),
         };
@@ -363,8 +379,23 @@ impl Game {
         // standing ready between them.
         let player = &self.sim.player;
         let pose = Pose::swing(player.swung, self.sim.swing_due(), into).unwrap_or_else(|| Pose::at(player.moved(), player.steps, into));
+        // The player is drawn in layers: what shows from behind them,
+        // their body, then what they wear over it, each piece in its
+        // metal's colour.
+        let ground = self.player_ground();
+        let worn = |slot| self.sim.gear.worn(slot).and_then(|item| Some((self.look.gear(slot), metal_tint(item.metal()?))));
+        for (gear, tint) in GEAR_ORDER.into_iter().filter_map(worn) {
+            if let Some((sprite, flip)) = gear.under.sprite(self.facing, pose) {
+                extras.push(Placed { sprite, ground, flip, tint });
+            }
+        }
         if let Some((sprite, flip)) = walk.sprite(self.facing, pose) {
-            extras.push(Placed { sprite, ground: self.player_ground(), flip, tint: [1.0; 4] });
+            extras.push(Placed { sprite, ground, flip, tint: [1.0; 4] });
+        }
+        for (gear, tint) in GEAR_ORDER.into_iter().filter_map(worn) {
+            if let Some((sprite, flip)) = gear.over.sprite(self.facing, pose) {
+                extras.push(Placed { sprite, ground, flip, tint });
+            }
         }
         extras
     }

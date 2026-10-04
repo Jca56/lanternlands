@@ -8,7 +8,7 @@
 use lntrn_core::impl_pod;
 use lntrn_math::Vec2;
 use sim::noise::unit;
-use sim::{PropKind, Terrain, World};
+use sim::{Metal, PropKind, Slot, Terrain, World};
 
 use crate::anim::WalkSprites;
 use crate::assets::{SpriteId, SpriteSet};
@@ -76,7 +76,10 @@ pub struct Placed {
 pub struct Look {
     tree: Option<SpriteId>,
     rock: Option<SpriteId>,
+    tin_rock: Option<SpriteId>,
     rock_spent: Option<SpriteId>,
+    furnace: Option<SpriteId>,
+    anvil: Option<SpriteId>,
     herb_purple: Option<SpriteId>,
     herb_cyan: Option<SpriteId>,
     tuft: Option<SpriteId>,
@@ -86,25 +89,50 @@ pub struct Look {
     pub target_ring: Option<SpriteId>,
     pub player: WalkSprites,
     pub goblin: WalkSprites,
+    /// What the player's gear is drawn with, slot by slot.
+    gear: [GearSprites; Slot::ALL.len()],
+}
+
+/// The drawings of what is worn in one slot, laid out like the player's
+/// own: what goes over the body, and what shows from behind it.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GearSprites {
+    pub over: WalkSprites,
+    pub under: WalkSprites,
+}
+
+/// The order gear is drawn in over the body, bottom first.
+pub const GEAR_ORDER: [Slot; 7] = [Slot::Legs, Slot::Feet, Slot::Body, Slot::Hands, Slot::Head, Slot::Shield, Slot::Weapon];
+
+/// The colour gear's plain greys are multiplied by: its metal's.
+pub fn metal_tint(metal: Metal) -> [f32; 4] {
+    match metal {
+        Metal::Bronze => [0.878, 0.627, 0.353, 1.0],
+    }
 }
 
 impl Look {
     pub fn find(set: &SpriteSet) -> Look {
-        Look { tree: set.id("tree"), rock: set.id("rock"), rock_spent: set.id("rock_spent"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft"), gravestone: set.id("gravestone"), target_ring: set.id("target_ring"), player: WalkSprites::find(set, "player"), goblin: WalkSprites::find(set, "goblin") }
+        Look { tree: set.id("tree"), rock: set.id("rock"), tin_rock: set.id("tin_rock"), rock_spent: set.id("rock_spent"), furnace: set.id("furnace"), anvil: set.id("anvil"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft"), gravestone: set.id("gravestone"), target_ring: set.id("target_ring"), player: WalkSprites::find(set, "player"), goblin: WalkSprites::find(set, "goblin"), gear: Slot::ALL.map(|slot| GearSprites { over: WalkSprites::find(set, &format!("gear_{}", slot.name())), under: WalkSprites::find(set, &format!("gear_{}_under", slot.name())) }) }
     }
 
     /// The names of the sprites it looked for and did not find.
     pub fn missing(&self) -> Vec<String> {
-        let all = [("tree", self.tree), ("rock", self.rock), ("rock_spent", self.rock_spent), ("herb_purple", self.herb_purple), ("herb_cyan", self.herb_cyan), ("tuft", self.tuft), ("gravestone", self.gravestone), ("target_ring", self.target_ring)];
+        let all = [("tree", self.tree), ("rock", self.rock), ("tin_rock", self.tin_rock), ("rock_spent", self.rock_spent), ("furnace", self.furnace), ("anvil", self.anvil), ("herb_purple", self.herb_purple), ("herb_cyan", self.herb_cyan), ("tuft", self.tuft), ("gravestone", self.gravestone), ("target_ring", self.target_ring)];
         all.into_iter().filter(|(_, id)| id.is_none()).map(|(name, _)| name.to_owned()).chain(self.player.missing("player")).chain(self.goblin.missing("goblin")).collect()
     }
 
     /// The sprite a prop is drawn with once it has given all it had.
     fn spent(&self, kind: PropKind) -> Option<SpriteId> {
         match kind {
-            PropKind::Rock => self.rock_spent,
+            PropKind::Rock | PropKind::TinRock => self.rock_spent,
             _ => None,
         }
+    }
+
+    /// The drawings of what is worn in a slot.
+    pub fn gear(&self, slot: Slot) -> &GearSprites {
+        &self.gear[Slot::ALL.iter().position(|s| *s == slot).expect("every slot is listed")]
     }
 
     /// The drawings a kind of monster is shown with.
@@ -121,6 +149,9 @@ impl Look {
             PropKind::Rock => self.rock,
             PropKind::HerbPurple => self.herb_purple,
             PropKind::HerbCyan => self.herb_cyan,
+            PropKind::TinRock => self.tin_rock,
+            PropKind::Furnace => self.furnace,
+            PropKind::Anvil => self.anvil,
         }
     }
 }
@@ -284,9 +315,9 @@ mod tests {
     #[test]
     fn every_sprite_the_scene_asks_for_is_in_the_assets() {
         assert_eq!(Look::find(&set()).missing(), Vec::<String>::new());
-        // With no assets: the eight of the map, and eighteen each for
+        // With no assets: the eleven of the map, and eighteen each for
         // the player and the goblin.
-        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 44);
+        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 47);
     }
 
     #[test]

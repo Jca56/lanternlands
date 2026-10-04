@@ -4,7 +4,9 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::abilities::Book;
 use crate::combat::Grave;
+use crate::gear::Gear;
 use crate::items::{Inventory, Item};
+use crate::making::Station;
 use crate::monsters::Monster;
 use crate::nodes::Node;
 use crate::path;
@@ -35,6 +37,8 @@ pub struct Player {
     /// What they are on their way to do.
     pub(crate) intent: Option<Intent>,
     pub(crate) activity: Option<Activity>,
+    /// The station they walked up to and have not left, and its tile.
+    pub(crate) station: Option<(Station, (i32, i32))>,
 }
 
 /// Something the player means to do once they are in reach of it.
@@ -53,6 +57,9 @@ pub enum Activity {
     Working { at: (i32, i32), swing: u32 },
     /// Fighting a monster, `cooldown` ticks from the next blow.
     Fighting { target: usize, cooldown: u32 },
+    /// At the station on tile `at`, making `left` more of a recipe (by
+    /// its place among them), `tick` ticks into the one in hand.
+    Making { at: (i32, i32), recipe: usize, left: u32, tick: u32 },
 }
 
 /// Who a blow was aimed at.
@@ -78,6 +85,8 @@ pub enum Event {
     Spent { at: (i32, i32) },
     /// The node asks a level of a skill the player does not have.
     TooHard { skill: Skill, level: u8 },
+    /// The player walked up to a station, to make things at it.
+    AtStation { station: Station },
     /// A blow landed, for this much.
     Hit { on: Who, damage: u32 },
     /// A blow missed.
@@ -142,6 +151,8 @@ pub struct Sim {
     pub player: Player,
     pub skills: Skills,
     pub inventory: Inventory,
+    /// What they wear and hold.
+    pub gear: Gear,
     /// How many of the world's ticks have passed.
     pub ticks: u64,
     /// Nodes that are not whole, by tile.
@@ -187,9 +198,9 @@ impl Sim {
     /// The player starts where the map says, whole and with nothing.
     pub fn new(world: World) -> Sim {
         let tile = start_tile(&world);
-        let player = Player { tile, from: tile, steps: 0, health: 0, swung: false, path: VecDeque::new(), goal: None, intent: None, activity: None };
+        let player = Player { tile, from: tile, steps: 0, health: 0, swung: false, path: VecDeque::new(), goal: None, intent: None, activity: None, station: None };
         let monsters = monsters_of(&world);
-        let mut sim = Sim { world, player, skills: Skills::default(), inventory: Inventory::default(), ticks: 0, worked: HashMap::new(), monsters, grave: None, last_fight: None, book: Book::default(), rng: Rng::new(0x5EED), events: Vec::new() };
+        let mut sim = Sim { world, player, skills: Skills::default(), inventory: Inventory::default(), gear: Gear::default(), ticks: 0, worked: HashMap::new(), monsters, grave: None, last_fight: None, book: Book::default(), rng: Rng::new(0x5EED), events: Vec::new() };
         sim.player.health = sim.max_health();
         sim
     }
@@ -238,7 +249,7 @@ impl Sim {
     /// What a press on a tile means: use what is there (a node, the
     /// grave), or walk there.
     pub fn click(&mut self, tile: (i32, i32)) {
-        let usable = self.node_at(tile).is_some() || self.grave.as_ref().is_some_and(|g| g.tile == tile);
+        let usable = self.node_at(tile).is_some() || self.station_at(tile).is_some() || self.grave.as_ref().is_some_and(|g| g.tile == tile);
         self.walk_to(tile);
         if usable {
             // To it, and then to use it.
@@ -253,6 +264,7 @@ impl Sim {
         self.player.goal = self.player.path.back().copied();
         self.player.intent = None;
         self.player.activity = None;
+        self.player.station = None;
     }
 
     /// Whether a living monster stands on `tile`.
@@ -277,6 +289,7 @@ impl Sim {
         self.player.goal = None;
         self.player.intent = None;
         self.player.activity = None;
+        self.player.station = None;
     }
 
     /// The world changed under the player (the map was edited): if they
@@ -322,6 +335,7 @@ impl Sim {
         self.engage(true);
         self.arrive();
         self.work();
+        self.craft();
         self.use_abilities();
         self.fight();
     }
@@ -342,6 +356,11 @@ impl Sim {
         if self.grave.as_ref().is_some_and(|g| g.tile == at) {
             return self.open_grave();
         }
+        if let Some(station) = self.station_at(at) {
+            self.player.station = Some((station, at));
+            self.events.push(Event::AtStation { station });
+            return;
+        }
         let Some(node) = self.node_at(at).filter(|_| (dx, dy) != (0, 0)) else {
             return;
         };
@@ -356,6 +375,16 @@ impl Sim {
         }
     }
 
+    /// How many ticks a swing at a node takes the player: fewer with
+    /// the right tool in the bag, and never less than one.
+    pub fn swing_ticks(&self, node: &Node) -> u32 {
+        let quicker = match node.skill {
+            Skill::Mining => self.inventory.slots().iter().flatten().map(|stack| stack.item.mining_speed()).max().unwrap_or(0),
+            _ => 0,
+        };
+        node.swing_ticks.saturating_sub(quicker).max(1)
+    }
+
     /// A tick of work: when a swing is done, roll for what it got.
     fn work(&mut self) {
         let Some(Activity::Working { at, swing }) = self.player.activity else {
@@ -366,7 +395,7 @@ impl Sim {
             self.player.activity = None;
             return;
         };
-        if swing + 1 < node.swing_ticks {
+        if swing + 1 < self.swing_ticks(&node) {
             self.player.activity = Some(Activity::Working { at, swing: swing + 1 });
             return;
         }

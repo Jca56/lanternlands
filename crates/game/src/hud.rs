@@ -5,7 +5,9 @@
 use lntrn_math::{Color, Rect, Vec2};
 use lntrn_ui::{ImageHandle, Sense, Ui};
 use sim::items::SLOTS;
-use sim::{Event, Item, Sim, Skill, Who};
+use sim::{Event, Item, Sim, Skill, Slot, Who};
+
+use crate::{gear_panel, hotbar};
 
 /// Sizes in logical pixels.
 const SLOT: f64 = 75.0;
@@ -83,15 +85,24 @@ pub struct Sight<'a> {
 pub struct ItemPictures(pub [Option<ImageHandle>; Item::ALL.len()]);
 
 impl ItemPictures {
-    fn of(&self, item: Item) -> Option<ImageHandle> {
+    pub fn of(&self, item: Item) -> Option<ImageHandle> {
         self.0[Item::ALL.iter().position(|i| *i == item)?]
     }
+}
+
+/// What a press on the bag or the gear asks for: something put on from
+/// a slot of the bag, or what is worn in a slot taken off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Wear {
+    On(usize),
+    Off(Slot),
 }
 
 #[derive(Default)]
 pub struct Hud {
     pub bag_open: bool,
     pub skills_open: bool,
+    pub gear_open: bool,
     drops: Vec<Line>,
     messages: Vec<Line>,
 }
@@ -146,7 +157,7 @@ impl Hud {
                     continue;
                 }
                 // Experience is not shown as it comes: it hid the blows' numbers.
-                Event::Xp { .. } | Event::Swing { .. } | Event::Spent { .. } | Event::Slain { .. } => continue,
+                Event::Xp { .. } | Event::AtStation { .. } | Event::Swing { .. } | Event::Spent { .. } | Event::Slain { .. } => continue,
             };
             self.drops.push(Line { text, born: now, at, color, big });
         }
@@ -176,8 +187,9 @@ impl Hud {
         self.messages.iter().map(|m| m.text.as_str()).collect()
     }
 
-    /// Draw over the world's area `view`.
-    pub fn draw(&mut self, ui: &mut Ui, view: Rect, sim: &Sim, pictures: &ItemPictures, sight: &Sight) {
+    /// Draw over the world's area `view`. Gives what a press on the bag
+    /// or the gear asked for, if one did.
+    pub fn draw(&mut self, ui: &mut Ui, view: Rect, sim: &Sim, pictures: &ItemPictures, sight: &Sight) -> Option<Wear> {
         let now = ui.now();
         self.drops.retain(|d| now - d.born < DROP_LIFE);
         self.messages.retain(|m| now - m.born < MESSAGE_LIFE);
@@ -197,9 +209,12 @@ impl Hud {
         let (margin, gap) = (px(MARGIN), px(GAP));
         let corner = view.max - Vec2::new(margin, margin);
         let button = Vec2::new(px(BUTTON.x), px(BUTTON.y));
-        let bar = Rect::new(corner - Vec2::new(button.x * 2.0 + gap, button.y), corner);
+        let bar = Rect::new(corner - Vec2::new(button.x * 3.0 + gap * 2.0, button.y), corner);
         ui.child(bar, LAYER, |ui| {
             ui.row(|ui| {
+                if ui.button_sized("Gear", button).clicked {
+                    self.gear_open = !self.gear_open;
+                }
                 if ui.button_sized("Skills", button).clicked {
                     self.skills_open = !self.skills_open;
                 }
@@ -209,21 +224,28 @@ impl Hud {
             });
         });
 
-        // Panels stand on the buttons, the bag at the right and the
-        // skills to its left.
+        // Panels stand on the buttons: the bag at the right, the skills
+        // to its left, the gear to the left of those.
+        // A panel wide enough to reach over the hotbar stands on that
+        // instead, so neither hides the other.
+        let mut wear = None;
         let mut right = bar.max.x;
-        let floor = bar.min.y - gap;
+        let hot = hotbar::rect(ui, view);
+        let stand = |right: f64, width: f64| {
+            let floor = if right - width < hot.max.x + gap { hot.min.y.min(bar.min.y) } else { bar.min.y } - gap;
+            move |size: Vec2| Rect::new(Vec2::new(right - size.x, floor - size.y), Vec2::new(right, floor))
+        };
         if self.bag_open {
             let rows = SLOTS.div_ceil(COLUMNS) as f64;
             let size = Vec2::new(px(SLOT) * COLUMNS as f64 + gap * (COLUMNS as f64 - 1.0) + px(PAD) * 2.0, px(SLOT) * rows + gap * rows + m.widget_h + px(PAD) * 2.0);
-            let rect = Rect::new(Vec2::new(right - size.x, floor - size.y), Vec2::new(right, floor));
-            ui.child(rect, LAYER, |ui| draw_bag(ui, rect, sim, pictures));
+            let rect = stand(right, size.x)(size);
+            ui.child(rect, LAYER, |ui| wear = draw_bag(ui, rect, sim, pictures).map(Wear::On));
             right = rect.min.x - gap;
         }
         if self.skills_open {
             let rows = Skill::ALL.len() as f64;
             let size = Vec2::new(px(SKILLS_WIDTH), (m.widget_h + m.gap) * rows - m.gap + px(PAD) * 2.0);
-            let rect = Rect::new(Vec2::new(right - size.x, floor - size.y), Vec2::new(right, floor));
+            let rect = stand(right, size.x)(size);
             ui.child(rect, LAYER, |ui| {
                 backdrop(ui, rect);
                 ui.child(rect.shrink(px(PAD)), LAYER, |ui| {
@@ -232,7 +254,17 @@ impl Hud {
                     }
                 });
             });
+            right = rect.min.x - gap;
         }
+        if self.gear_open {
+            let size = gear_panel::size(ui);
+            let rect = stand(right, size.x)(size);
+            ui.child(rect, LAYER, |ui| {
+                backdrop(ui, rect);
+                wear = gear_panel::draw(ui, rect, sim, pictures).map(Wear::Off).or(wear);
+            });
+        }
+        wear
     }
 
     fn draw_drops(&self, ui: &mut Ui, sight: &Sight, above_player: Vec2, now: f64) {
@@ -324,8 +356,11 @@ fn backdrop(ui: &mut Ui, rect: Rect) {
 
 /// The bag: every slot with what it holds and how many, and under them
 /// the name of what the pointer is on.
-fn draw_bag(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures) {
+/// The bag. Gives the slot of something wearable that was pressed, to
+/// be put on.
+fn draw_bag(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures) -> Option<usize> {
     backdrop(ui, rect);
+    let mut put_on = None;
     let (slot, gap, pad) = (ui.m.px(SLOT), ui.m.px(GAP), ui.m.px(PAD));
     let style = ui.text_style();
     let mut pointed = None;
@@ -333,9 +368,13 @@ fn draw_bag(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures) {
         let (column, row) = ((i % COLUMNS) as f64, (i / COLUMNS) as f64);
         let at = rect.min + Vec2::new(pad + column * (slot + gap), pad + row * (slot + gap));
         let cell = Rect::from_min_size(at, Vec2::new(slot, slot));
-        let r = ui.interact(ui.id("slot").with_index(i), cell, Sense::NONE);
+        let wearable = held.is_some_and(|stack| stack.item.slot().is_some());
+        let r = ui.interact(ui.id("slot").with_index(i), cell, if wearable { Sense::CLICK } else { Sense::NONE });
         ui.recessed(cell, ui.theme.field);
         let Some(stack) = held else { continue };
+        if r.clicked {
+            put_on = Some(i);
+        }
         if r.hovered {
             pointed = Some(*stack);
             ui.draw.stroke_rect(cell, ui.m.border * 2.0, ui.m.radius, ui.theme.accent);
@@ -362,6 +401,7 @@ fn draw_bag(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures) {
         let line = Rect::new(Vec2::new(rect.min.x + pad, top), Vec2::new(rect.max.x - pad, top + ui.m.widget_h));
         ui.text_in_rect(stack.item.label(), &style, line, ui.theme.text);
     }
+    put_on
 }
 
 #[cfg(test)]

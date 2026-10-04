@@ -37,7 +37,11 @@ Locked with Alva on 2026-10-04.
 | Magic | Mana-based, no runes |
 | Healing | Potions (Alchemy). Food gives small buffs, WoW-style, not healing |
 | Gathering | Quick nodes: a few ticks, loot, node respawns later. Richer and rarer nodes sit deeper in dangerous territory. A node is worked in swings, each with a chance that climbs with level; it gives a few, then is spent until it comes back |
-| Tools | No pickaxe needed yet: mining is bare-handed until equipment exists (milestone 6), when pickaxes make you faster and unlock harder rocks |
+| Tools | Mining is bare-handed to begin with; a pickaxe makes you faster and later rocks will need one. A pickaxe carried in the bag is enough: the best one you have is used, with no swapping it into your hand |
+| Smithing | At stations on the map, placed with the editor: ore is smelted into bars at a furnace, bars are hammered into gear at an anvil. Next to each thing that can be made are buttons for 1, 5 and All |
+| Metals | Bronze first: a bronze bar takes one copper ore and one tin ore, so there is a tin rock too. Iron and beyond are later content on the same system |
+| Equipment | The full set of slots from the start: weapon, shield, head, body, legs, hands, feet |
+| Worn gear | Everything shows on the character, in every pose and facing: sword in hand, shield, helmet, body and leg armour, gauntlets, boots |
 | Progression | Per-skill levels trained by doing, no classes. Short and punchy: the cap is level 50, and each level should unlock something |
 | Alchemy inputs | Herbalism (gathering skill) + monster parts |
 | Out | Woodcutting, Firemaking, Cooking-as-healing, rune-based magic |
@@ -82,15 +86,46 @@ Built so the systems can be played; Alva has not signed these numbers off.
 
 Every skill starts at level 1.
 
-**Items.** Copper ore, goblin tooth (both stack).
+**Items.** Materials, which stack: copper ore, tin ore, bronze bar, goblin tooth. Gear, one to a slot: bronze pickaxe, sword, shield, helmet, chestplate, greaves, gauntlets, boots.
 
 **Nodes.**
 
 | Node | Skill | Level | Gives | Holds | A swing | Chance | Experience | Comes back |
 |---|---|---|---|---|---|---|---|---|
 | Copper rock | Mining | 1 | Copper ore | 3 | 3 ticks (1.2 s) | 55%, +3% a level, at most 95% | 12 each | 75 ticks (30 s) |
+| Tin rock | Mining | 1 | Tin ore | 3 | 3 ticks (1.2 s) | 55%, +3% a level, at most 95% | 12 each | 75 ticks (30 s) |
 
-So the first rock is level 2, and a level-1 miner empties a rock in about 6.5 s on average.
+So the first rock is level 2, and a level-1 miner empties a rock in about 6.5 s on average. A bronze pickaxe in the bag takes a tick off every swing (2 ticks, 0.8 s).
+
+**Smithing.** All of it trains Smithing.
+
+| Made | At | From | Level | Experience | Takes |
+|---|---|---|---|---|---|
+| Bronze bar | Furnace | 1 copper ore + 1 tin ore | 1 | 10 | 3 ticks (1.2 s) |
+| Bronze pickaxe | Anvil | 2 bars | 1 | 30 | 4 ticks (1.6 s) |
+| Bronze sword | Anvil | 2 bars | 2 | 30 | 4 ticks |
+| Bronze boots | Anvil | 1 bar | 2 | 15 | 4 ticks |
+| Bronze gauntlets | Anvil | 1 bar | 3 | 15 | 4 ticks |
+| Bronze helmet | Anvil | 2 bars | 3 | 30 | 4 ticks |
+| Bronze shield | Anvil | 3 bars | 4 | 45 | 4 ticks |
+| Bronze greaves | Anvil | 3 bars | 4 | 45 | 4 ticks |
+| Bronze chestplate | Anvil | 5 bars | 5 | 75 | 4 ticks |
+
+**Gear.** What each piece adds while it is worn. Accuracy counts as Melee levels when the player strikes, armour as Defence levels when they are struck at (4% a level either way); damage is added to the most a blow does.
+
+| Piece | Slot | Accuracy | Damage | Armour |
+|---|---|---|---|---|
+| Bronze sword | Weapon | +2 | +2 | |
+| Bronze shield | Shield | | | +2 |
+| Bronze helmet | Head | | | +1 |
+| Bronze chestplate | Body | | | +3 |
+| Bronze greaves | Legs | | | +2 |
+| Bronze gauntlets | Hands | | | +1 |
+| Bronze boots | Feet | | | +1 |
+
+So the whole set is +10 armour: a goblin, which lands 6 blows in 10 on a bare level-1 character, lands 2 in 10 on one in full bronze. With the sword, blows do 1 to 4 instead of 1 to 2 and land 68% of the time instead of 60%. Over 200 fights each against one goblin, the armoured character took less than a fifth of the damage and won in a little over half the time.
+
+Forging is 15 experience a bar. The levels are set so that making each piece once, in this order, smelting its bars first, is always enough experience for the next: the whole set is 19 bars (19 copper and 19 tin ore) and ends at Smithing 5, with no filler to make.
 
 **Monsters.**
 
@@ -188,10 +223,14 @@ Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 - **Two clocks.** The world ticks steadily (monsters, health, rocks coming back) whenever there is anything for it to do. The player's own tick starts the moment they click, so a click never waits. Both are 0.4 s.
 - **Fighting on screen.** The player's health is a bar in the top-left corner with its numbers, and (Alva's ask) a bar over their own head while they are hurt or in a fight. A monster that is hurt or after the player has a bar over its head. What a blow did rises over whoever it was aimed at, in big letters: a white number or a grey "miss" over a monster the player struck at, a red "-N" or a grey "miss" over the player when a monster struck at them. The monster the player is set on has a red ring on the ground under it (`assets/sprites/target-ring.png`, drawn in the world just before the monster so it lies under its feet). The goblin's sheet (`assets/sprites/goblin-01.png`) is laid out like the player's: three facings, a walk, and a swing of its club. The player swings with the same two poses they mine with, once for each blow.
 - **Abilities and the hotbar** (`sim::abilities`, `hotbar.rs`). An ability asked for is used on the player's next tick, which from a standstill comes at once; one aimed at a monster waits until the player is beside it, and is let go if the monster is. Asked for with no target, it goes for the nearest monster that is after the player, or says "No target". Cooldowns are counted in the world's ticks, so they run down whatever the player does, and are not saved. The bar is six 90 px buttons on light plates (so the icons' dark outlines read), each with its key on a chip in the corner; a cooling button goes dark with the seconds left written on it, one asked for and waiting has a light edge, and Guard's has a blue edge while the guard is up. Icons are 128 px, in `assets/abilities/` (sources in `art/abilities/`). What is on the bar is fixed for now.
+- **Smithing** (`sim::making`, `making.rs`). A furnace and an anvil are props, placed with the editor like any other; a click walks the player beside one and they are then at it until they walk off (or press Esc, which steps back from a station before it leaves the game). While they are at it the panel for it is open on the left: a row for each thing made there, with its picture on a light plate, what it takes against what is carried (red when short), and buttons for 1, 5 and All, or the Smithing level it wants in red where the smith is not up to it. A thing is made every few ticks, its makings leaving the bag as it goes in, until the number asked for is made, the makings run out or there is no room; a hammer swing is drawn for each. What can be made is one table, `RECIPES`.
+- **Equipment** (`sim::gear`, `gear_panel.rs`). Seven slots. A press on a piece in the bag puts it on, trading places with whatever was worn there, so there is always room; a press on a worn piece in the gear panel (the Gear button, or G) takes it off into the bag, if there is room. The panel lays the slots out like a body and adds up what is worn. Gear stays on through death, is saved in a section of its own (a save from before gear simply has none), and is saved the moment it changes.
+- **Gear on the character.** Each slot has a sheet laid out exactly like the player's own (`assets/sprites/gear-*.png`), drawn over the body in a fixed order: legs, feet, body, hands, head, shield, weapon. The shield has a second sheet drawn under the body, for the views where it shows from behind. The sheets are plain greys and the game multiplies them by the metal's colour, so a new metal is a colour, not eight more sheets. Greaves, boots, chestplate and gauntlets were made in Lantern Studio from the player's own sheet (each body part picked out by its colour and filled grey, so they fit every pose by construction); helmet, sword and shield are drawn and placed for each of the 18 frames. The source is `art/sprites/player-gear.lstudio`.
+- **Sheets of cells are trimmed.** A grid's cell is packed as only the part of it that is drawn, with its anchor moved to match, and a cell with nothing in it is no sprite. The gear sheets are mostly empty, so this keeps the packed sheet small; it shrank the player's and the goblin's too.
 - **More drawings.** The player's sheet gained a wind-up and a strike for each facing; a spent rock is the rock without its copper; items have 128 px icons in `assets/items/` (sources in `art/items/`).
 - **Characters and saves.** The game opens on a title screen (`title.rs`): the painting `assets/title/title-01.png` (source in `art/title/`) cut to fill the window, the game's name, three character slots and Quit. An empty slot asks for a name (1 to 16 letters) and starts a new character; a held one continues; Delete asks first. A save (`sim::save`) is one small binary file per character, `character-N.save`, in sections like a chunk file's, with skills and items by name: who they are and how long they have been played, where they stand, their skills and bag, the nodes they left spent with the time each has left, and their grave. Health and monsters are not saved: both come back whole. It is written whole and then moved into place. Resuming on a map that has changed stands the player as near where they were as they can be and forgets nodes that are gone. Esc goes back to the title screen. The map belongs to no character: all three play on the same one.
-- **Controls for now.** Click to walk, to work a rock, to fight a monster, or to open the grave. 1 to 6 for the hotbar. Esc for the title screen. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
-- **How it is checked.** 307 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels, the bag, a fight and a grave can be looked at and their pixels checked. Fights are played through end to end the same way: a goblin is put beside the player and time is let pass.
+- **Controls for now.** Click to walk, to work a rock, to fight a monster, to use a furnace or an anvil, or to open the grave. 1 to 6 for the hotbar; I, K and G for the bag, the skills and the gear. Esc for the title screen. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
+- **How it is checked.** 334 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels, the bag, a fight and a grave can be looked at and their pixels checked. Fights are played through end to end the same way: a goblin is put beside the player and time is let pass.
 
 ### Calls Claude made, Alva's to overrule
 
@@ -240,10 +279,23 @@ Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 43. A Kick does no damage, and a kicked monster shows only the word "stunned": no stars over its head yet.
 44. Abilities use the two swing drawings there are: no kick drawing, no guard stance yet.
 45. Dying keeps the cooldowns running but drops the guard and anything asked for.
+46. Every smithing number above, and the pickaxe's tick.
+47. The rock that was just "Rock" is the copper rock; the tin rock is the same rock with tin in it, and a spent one of either looks the same.
+48. Smelting is drawn with the same hammer swing as forging.
+49. The making panel stays open after a batch is done, to make more; it shows only what that station makes.
+50. Icons with dark outlines stand on light plates wherever the ground behind them is dark (the hotbar, the making panel, the gear panel).
+51. Every gear number above. Nothing needs a level to be worn yet.
+52. The sword is always in the hand nearest the viewer in the side views (the sheet is mirrored for facing left), and the shield on the far side.
+53. The chestplate covers the tunic and leaves the sleeves and the belt showing; the helmet leaves the face open with a nose guard.
+54. In the strike poses the sword ends low and close to the body: a cell of the player's sheet has no room for a longer reach.
+55. Gear is put on and taken off with one press, in a fight too; there is no dragging yet.
+56. A panel that would reach over the hotbar stands on top of it instead of on the buttons.
+57. The gear panel's empty slots say what goes in them, dimly.
 
 ## Open questions
 
 - Bank size
+- Whether gear should need levels to wear, and what iron and later metals cost and give
 - How abilities are unlocked (all are there from the start for now), and whether the bar can be rearranged
 - Where experience gained is shown, now that it no longer floats over the player
 - The Skills panel's look: Alva does not like Lantern UI 2's stock progress bars there. To be redrawn as our own rows (it is one function in `hud.rs`); what they should look like is not decided
@@ -264,6 +316,7 @@ Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 4b. Save game: title screen, three named characters, autosave. **Done 2026-10-04**: Alva tried it ("It works!")
 5. Fighting: goblins, melee auto-attack, health, drops, death and the grave, the editor's Spawn tool. **Done 2026-10-04**: Alva played it ("it's good", "cool!"), had the floating experience text taken out, asked for one swing per blow, a red ring on the monster clicked and a health bar over the player's own head
 5b. Abilities: the hotbar, cooldowns, Heavy Strike, Flurry, Kick, Guard. **Done 2026-10-04**: Alva played it ("super cool! Combat works nicely!")
-6. Smithing and equipment
+6a. Smithing: tin rock, furnace, anvil, bronze bars, the bronze set and a pickaxe forged into the bag, the making panel. **Done 2026-10-04**: Alva smithed the whole set ("Heck yeah! Awesome!")
+6b. Equipment: the seven slots, the gear panel, what gear does in a fight, gear drawn on the character and tinted by its metal, gear kept through death and saved. **Done 2026-10-04**: Alva wore it all, screenshot and all
 7. Herbalism, Alchemy, potions
 8. NPCs, shops, bank, dialogue

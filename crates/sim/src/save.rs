@@ -15,6 +15,8 @@
 //! "NODE"  count u32, then each: x i32, y i32, left u8, ticks until
 //!         whole again u32 (all ones = not coming back by itself)
 //! "GRAV"  x i32, y i32, then what it holds, written as a bag is
+//! "GEAR"  count u8, then for each thing worn: its slot's name and
+//!         its own (each length u8 + UTF-8)
 //! ```
 //!
 //! Skills and items are written by name, so new ones can be added and
@@ -22,6 +24,7 @@
 //! does not know is skipped; a name it does not know is an error.
 
 use crate::combat::Grave;
+use crate::gear::{Gear, Slot};
 use crate::items::{Inventory, Item, SLOTS, Stack};
 use crate::player::{Sim, Worked};
 use crate::skills::{Skill, Skills};
@@ -36,6 +39,7 @@ const SKILLS: [u8; 4] = *b"SKIL";
 const BAG: [u8; 4] = *b"BAG ";
 const NODES: [u8; 4] = *b"NODE";
 const GRAVE: [u8; 4] = *b"GRAV";
+const GEAR: [u8; 4] = *b"GEAR";
 const NEVER: u32 = u32::MAX;
 
 /// Who a save belongs to.
@@ -67,6 +71,8 @@ pub struct Saved {
     pub nodes: Vec<SavedNode>,
     /// Where they last died, and what waits there.
     pub grave: Option<Grave>,
+    /// What they wear and hold.
+    pub gear: Gear,
 }
 
 /// A bag as bytes: slots u16, the names in use, then for each slot a
@@ -137,6 +143,14 @@ impl Saved {
             write_bag(&mut held, &grave.items);
             sections.push((GRAVE, held));
         }
+        if self.gear.iter().next().is_some() {
+            let mut worn = vec![self.gear.iter().count() as u8];
+            for (slot, item) in self.gear.iter() {
+                write_text(&mut worn, slot.name());
+                write_text(&mut worn, item.name());
+            }
+            sections.push((GEAR, worn));
+        }
         let mut out = Vec::new();
         out.extend_from_slice(&MAGIC);
         out.extend_from_slice(&VERSION.to_le_bytes());
@@ -154,7 +168,7 @@ impl Saved {
         if version != VERSION {
             return Err(format!("it is version {version}; this build reads version {VERSION}"));
         }
-        let mut saved = Saved { character: Character::default(), tile: (0, 0), steps: 0, ticks: 0, skills: Skills::default(), inventory: Inventory::default(), nodes: Vec::new(), grave: None };
+        let mut saved = Saved { character: Character::default(), tile: (0, 0), steps: 0, ticks: 0, skills: Skills::default(), inventory: Inventory::default(), nodes: Vec::new(), grave: None, gear: Gear::default() };
         let mut seen: Vec<[u8; 4]> = Vec::new();
         for _ in 0..file.u8()? {
             let tag = file.tag()?;
@@ -189,6 +203,18 @@ impl Saved {
                     saved.grave = Some(Grave { tile, items: read_bag(&mut section)? });
                     section.done("the grave")?;
                 }
+                GEAR => {
+                    for _ in 0..section.u8()? {
+                        let (slot, item) = (section.text("a slot's name")?, section.text("an item's name")?);
+                        let slot = Slot::from_name(&slot).ok_or(format!("this build has no slot called {slot:?}"))?;
+                        let item = Item::from_name(&item).ok_or(format!("this build has no item called {item:?}"))?;
+                        if item.slot() != Some(slot) {
+                            return Err(format!("{} is worn in the {} slot", item.label(), slot.name()));
+                        }
+                        saved.gear.set(slot, Some(item));
+                    }
+                    section.done("the gear")?;
+                }
                 NODES => {
                     for _ in 0..section.u32()? {
                         let at = (section.i32()?, section.i32()?);
@@ -216,7 +242,7 @@ impl Sim {
         let mut nodes: Vec<SavedNode> = self.worked.iter().map(|(&at, w)| SavedNode { at, left: w.left, wait: w.back_at.map(|back| back.saturating_sub(self.ticks).min(NEVER as u64 - 1) as u32) }).collect();
         // Row by row, so the same game is always the same save.
         nodes.sort_by_key(|n| (n.at.1, n.at.0));
-        Saved { character: character.clone(), tile: self.player.tile, steps: self.player.steps, ticks: self.ticks, skills: self.skills.clone(), inventory: self.inventory.clone(), nodes, grave: self.grave.clone() }
+        Saved { character: character.clone(), tile: self.player.tile, steps: self.player.steps, ticks: self.ticks, skills: self.skills.clone(), inventory: self.inventory.clone(), nodes, grave: self.grave.clone(), gear: self.gear.clone() }
     }
 
     /// The game a save holds, in `world` as it is now. The map may have
@@ -230,6 +256,7 @@ impl Sim {
         sim.skills = saved.skills.clone();
         sim.inventory = saved.inventory.clone();
         sim.grave = saved.grave.clone();
+        sim.gear = saved.gear.clone();
         for node in &saved.nodes {
             let back_at = node.wait.map(|wait| saved.ticks + wait as u64);
             sim.worked.insert(node.at, Worked { left: node.left, back_at });

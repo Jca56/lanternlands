@@ -35,6 +35,9 @@ pub struct SpriteDef {
     pub rect: Option<[u32; 4]>,
     /// The pixel, counted from the rect's corner, that stands on the ground.
     pub anchor: [f64; 2],
+    /// A grid's cell: packed as only the part of it that is drawn, and
+    /// no sprite at all when nothing is.
+    pub trim: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -66,7 +69,7 @@ fn grid_sprites(name: &str, entry: &Doc) -> Result<Vec<SpriteDef>, String> {
     let anchor = entry.get("anchor").and_then(numbers::<2>).ok_or(format!("{name}: anchor must be [x, y]"))?;
     let rows = entry.get("rows").and_then(strings).ok_or(format!("{name}: rows must be a list of names"))?;
     let columns = entry.get("columns").and_then(strings).ok_or(format!("{name}: columns must be a list of names"))?;
-    let cell = |r: usize, c: usize| SpriteDef { name: format!("{name}_{}_{}", rows[r], columns[c]), file: file.to_owned(), rect: Some([c as u32 * w, r as u32 * h, w, h]), anchor };
+    let cell = |r: usize, c: usize| SpriteDef { name: format!("{name}_{}_{}", rows[r], columns[c]), file: file.to_owned(), rect: Some([c as u32 * w, r as u32 * h, w, h]), anchor, trim: true };
     Ok((0..rows.len()).flat_map(|r| (0..columns.len()).map(move |c| (r, c))).map(|(r, c)| cell(r, c)).collect())
 }
 
@@ -85,7 +88,7 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
                 Some(r.map(|v| v as u32))
             }
         };
-        sprites.push(SpriteDef { name: name.to_owned(), file, rect, anchor });
+        sprites.push(SpriteDef { name: name.to_owned(), file, rect, anchor, trim: false });
     }
     if let Some(grids) = doc.get("grids").and_then(Doc::as_map) {
         for (name, entry) in grids.iter() {
@@ -164,6 +167,9 @@ impl SpriteSet {
             }
         }
         let mut sources = Vec::new();
+        // The sprites that are packed, each with its anchor in the rect
+        // it is packed as.
+        let mut kept: Vec<(&SpriteDef, [f64; 2])> = Vec::new();
         for def in &manifest.sprites {
             let image = &files.iter().find(|(file, _)| *file == def.file).expect("opened above").1;
             let rect = def.rect.unwrap_or([0, 0, image.width, image.height]);
@@ -172,6 +178,14 @@ impl SpriteSet {
             if !inside {
                 return Err(format!("{}: rect {rect:?} is not inside {} ({}x{})", def.name, def.file, image.width, image.height));
             }
+            let (rect, anchor) = if def.trim {
+                // A cell with nothing drawn in it is no sprite.
+                let Some(drawn) = drawn_part(image, rect) else { continue };
+                (drawn, [def.anchor[0] - (drawn[0] - x) as f64, def.anchor[1] - (drawn[1] - y) as f64])
+            } else {
+                (rect, def.anchor)
+            };
+            kept.push((def, anchor));
             sources.push(Source { image, rect });
         }
         let (sheet, places) = atlas::build(&sources).ok_or("a sprite is too wide for the sheet")?;
@@ -179,7 +193,7 @@ impl SpriteSet {
 
         let (sheet_w, sheet_h) = (sheet.width as f64, sheet.height as f64);
         let mut set = SpriteSet { sheet, sprites: Vec::new(), pictures, names: HashMap::new() };
-        for ((def, source), &(x, y)) in manifest.sprites.iter().zip(&sources).zip(&places) {
+        for ((&(def, anchor), source), &(x, y)) in kept.iter().zip(&sources).zip(&places) {
             let (x, y, w, h) = (x as f64, y as f64, source.rect[2] as f64, source.rect[3] as f64);
             let id = SpriteId(set.sprites.len() as u32);
             if set.names.insert(def.name.clone(), id).is_some() {
@@ -188,11 +202,22 @@ impl SpriteSet {
             set.sprites.push(Sprite {
                 uv: [(x / sheet_w) as f32, (y / sheet_h) as f32, ((x + w) / sheet_w) as f32, ((y + h) / sheet_h) as f32],
                 size: Vec2::new(w, h) / manifest.tile_px,
-                anchor: Vec2::new(def.anchor[0], def.anchor[1]) / manifest.tile_px,
+                anchor: Vec2::new(anchor[0], anchor[1]) / manifest.tile_px,
             });
         }
         Ok(set)
     }
+}
+
+/// The smallest box inside `rect` holding every pixel of it that is not
+/// fully clear; `None` when they all are.
+fn drawn_part(image: &Image, [x, y, w, h]: [u32; 4]) -> Option<[u32; 4]> {
+    let drawn = |px: u32, py: u32| image.rgba[(py as usize * image.width as usize + px as usize) * 4 + 3] != 0;
+    let rows = || (y..y + h).filter(|&py| (x..x + w).any(|px| drawn(px, py)));
+    let (top, bottom) = (rows().next()?, rows().next_back()?);
+    let columns = || (x..x + w).filter(|&px| (top..=bottom).any(|py| drawn(px, py)));
+    let (left, right) = (columns().next()?, columns().next_back()?);
+    Some([left, top, right - left + 1, bottom - top + 1])
 }
 
 #[cfg(test)]
@@ -225,7 +250,7 @@ anchor = [4.5, 6]
         let manifest = parse_manifest(TEXT).expect("parses");
         assert_eq!(manifest.tile_px, 200.0);
         assert_eq!(manifest.sprites.len(), 2);
-        assert_eq!(manifest.sprites[0], SpriteDef { name: "tree".into(), file: "sprites/objects.png".into(), rect: Some([4, 24, 40, 60]), anchor: [20.0, 50.0] });
+        assert_eq!(manifest.sprites[0], SpriteDef { name: "tree".into(), file: "sprites/objects.png".into(), rect: Some([4, 24, 40, 60]), anchor: [20.0, 50.0], trim: false });
         assert_eq!(manifest.sprites[1].rect, None);
         assert_eq!(manifest.sprites[1].anchor, [4.5, 6.0]);
     }
@@ -236,13 +261,37 @@ anchor = [4.5, 6]
         let manifest = parse_manifest(&text).expect("parses");
         let grid: Vec<&SpriteDef> = manifest.sprites.iter().filter(|s| s.name.starts_with("hero_")).collect();
         assert_eq!(grid.len(), 6);
-        assert_eq!(*grid[0], SpriteDef { name: "hero_down_idle".into(), file: "sprites/objects.png".into(), rect: Some([0, 0, 20, 30]), anchor: [10.0, 28.0] });
+        assert_eq!(*grid[0], SpriteDef { name: "hero_down_idle".into(), file: "sprites/objects.png".into(), rect: Some([0, 0, 20, 30]), anchor: [10.0, 28.0], trim: true });
         assert_eq!((grid[5].name.as_str(), grid[5].rect), ("hero_up_pass", Some([40, 30, 20, 30])));
         // And they load like any other sprite.
         let set = SpriteSet::from_manifest(&manifest, picture).expect("loads");
         assert_eq!(set.get(set.id("hero_up_step").unwrap()).size, Vec2::new(0.1, 0.15));
         let broken = text.replace("cell = [20, 30]", "cell = [20.5, 30]");
         assert!(parse_manifest(&broken).unwrap_err().contains("hero: cell"));
+    }
+
+    #[test]
+    fn a_grids_cell_is_packed_as_only_what_is_drawn_in_it_and_an_empty_cell_is_no_sprite() {
+        // A 40 by 30 picture cut into two cells: the first has a 6 by 4
+        // box drawn at (5, 10), the second nothing at all.
+        let mut image = Image::solid(40, 30, [0, 0, 0, 0]);
+        for py in 10..14 {
+            for px in 5..11 {
+                let at = (py * 40 + px) * 4;
+                image.rgba[at..at + 4].copy_from_slice(&[200, 100, 50, 255]);
+            }
+        }
+        let text = "tile_px = 1\n[sprites]\n[grids.hat]\nfile = \"hat.png\"\ncell = [20, 30]\nanchor = [10, 28]\nrows = [\"down\"]\ncolumns = [\"idle\", \"step\"]\n";
+        let set = SpriteSet::from_manifest(&parse_manifest(text).expect("parses"), |_| Ok(image.clone())).expect("loads");
+        assert_eq!(set.len(), 1);
+        assert_eq!(set.id("hat_down_step"), None, "nothing drawn, no sprite");
+        let hat = set.get(set.id("hat_down_idle").expect("the drawn cell"));
+        assert_eq!(hat.size, Vec2::new(6.0, 4.0));
+        // Its anchor is still the same point of the picture: (10, 28)
+        // of the cell is (5, 18) from the box's corner.
+        assert_eq!(hat.anchor, Vec2::new(5.0, 18.0));
+        let picture = set.picture(set.id("hat_down_idle").unwrap());
+        assert_eq!((picture.width, picture.height, picture.pixel(0, 0), picture.pixel(5, 3)), (6, 4, [200, 100, 50, 255], [200, 100, 50, 255]));
     }
 
     #[test]
@@ -302,7 +351,15 @@ anchor = [4.5, 6]
     fn the_shipped_assets_load() {
         let (manifest, dir) = shipped();
         let set = SpriteSet::load(&dir).expect("assets load");
-        assert_eq!(set.len(), manifest.sprites.len());
+        // Everything listed one by one is there; of the grids' cells,
+        // those with something drawn in them.
+        for def in manifest.sprites.iter().filter(|def| !def.trim) {
+            assert!(set.id(&def.name).is_some(), "{} did not load", def.name);
+        }
+        let cells = manifest.sprites.iter().filter(|def| def.trim).count();
+        let loaded = manifest.sprites.iter().filter(|def| def.trim && set.id(&def.name).is_some()).count();
+        assert!(loaded > cells / 2 && loaded < cells, "{loaded} of {cells} cells have something drawn in them");
+        assert_eq!(set.len(), manifest.sprites.len() - (cells - loaded));
     }
 
     /// The rects were measured by hand off the sheet, so check them
@@ -322,7 +379,8 @@ anchor = [4.5, 6]
                     assert_eq!(image.pixel(px, py)[3], 0, "{name}: something is drawn on its rect's edge at ({px}, {py}) of {file}");
                 }
                 let drawn = (y..y + h).flat_map(|py| (x..x + w).map(move |px| (px, py))).filter(|&(px, py)| image.pixel(px, py)[3] > 0).count();
-                assert!(drawn as u32 > w * h / 8, "{name}: its rect in {file} is nearly empty");
+                // A piece of gear's cell may hold little, or nothing.
+                assert!(drawn as u32 > w * h / 8 || name.starts_with("gear_"), "{name}: its rect in {file} is nearly empty");
             }
             for py in 0..image.height {
                 for px in 0..image.width {

@@ -247,8 +247,8 @@ fn clicking_a_rock_mines_it_out_into_the_bag() {
 
 /// The pose the player is drawn in.
 pub(super) fn pose_of(game: &Game) -> Option<Pose> {
-    let drawn = game.extras().last().copied()?;
-    Pose::ALL.into_iter().find(|&pose| game.look.player.sprite(game.facing, pose) == Some((drawn.sprite, drawn.flip)))
+    let drawn = game.extras();
+    Pose::ALL.into_iter().find(|&pose| game.look.player.sprite(game.facing, pose).is_some_and(|(sprite, flip)| drawn.iter().any(|p| p.sprite == sprite && p.flip == flip)))
 }
 
 /// How many separate stretches of `pose` there are in a row of frames.

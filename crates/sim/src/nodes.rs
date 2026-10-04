@@ -43,7 +43,9 @@ impl PropKind {
         match self {
             // A copper rock.
             PropKind::Rock => Some(Node { skill: Skill::Mining, level: 1, item: Item::CopperOre, xp: 12, yields: 3, swing_ticks: 3, chance: 0.55, chance_per_level: 0.03, respawn_ticks: 75 }),
-            PropKind::Tree | PropKind::HerbPurple | PropKind::HerbCyan => None,
+            // A tin rock: the same to mine, for the other half of bronze.
+            PropKind::TinRock => Some(Node { skill: Skill::Mining, level: 1, item: Item::TinOre, xp: 12, yields: 3, swing_ticks: 3, chance: 0.55, chance_per_level: 0.03, respawn_ticks: 75 }),
+            PropKind::Tree | PropKind::HerbPurple | PropKind::HerbCyan | PropKind::Furnace | PropKind::Anvil => None,
         }
     }
 }

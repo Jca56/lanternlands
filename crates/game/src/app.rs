@@ -36,6 +36,7 @@ const REDO: &str = "editor.redo";
 const SAVE: &str = "editor.save";
 const BAG: &str = "hud.bag";
 const SKILLS: &str = "hud.skills";
+const GEAR: &str = "hud.gear";
 /// The hotbar's buttons, left to right: the keys 1 to 6.
 const SLOT_KEYS: [&str; hotbar::SLOTS] = ["hud.slot.1", "hud.slot.2", "hud.slot.3", "hud.slot.4", "hud.slot.5", "hud.slot.6"];
 const TITLE: &str = "game.title";
@@ -196,6 +197,7 @@ impl Game {
         bind(Key::Char('s'), Modifiers::CTRL, SAVE);
         bind(Key::Char('i'), Modifiers::NONE, BAG);
         bind(Key::Char('k'), Modifiers::NONE, SKILLS);
+        bind(Key::Char('g'), Modifiers::NONE, GEAR);
         for (i, slot) in SLOT_KEYS.iter().enumerate() {
             bind(Key::Char((b'1' + i as u8) as char), Modifiers::NONE, slot);
         }
@@ -359,7 +361,10 @@ impl Host for Game {
             EDIT if playing => self.panel_wanted = Some(!self.editing),
             BAG if playing && !self.editing => self.hud.bag_open = !self.hud.bag_open,
             SKILLS if playing && !self.editing => self.hud.skills_open = !self.hud.skills_open,
+            GEAR if playing && !self.editing => self.hud.gear_open = !self.hud.gear_open,
             slot if playing && !self.editing && SLOT_KEYS.contains(&slot) => self.use_slot(SLOT_KEYS.iter().position(|key| *key == slot).unwrap_or(0)),
+            // Esc closes what is open before it leaves the game.
+            TITLE if playing && !self.editing && self.sim.station().is_some() => self.sim.leave_station(),
             TITLE if playing && !self.editing => self.back_to_title(),
             CREATE => self.create_character(),
             DELETE => self.delete_character(cx),

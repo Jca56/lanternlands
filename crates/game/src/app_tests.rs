@@ -182,7 +182,7 @@ fn the_panels_rows_pick_what_the_next_click_does() {
     h.wheel(-8.0);
     turn(&mut h, &mut shell, &mut game);
     turn(&mut h, &mut shell, &mut game);
-    let row = panel_row(&h, &shell, "Rock");
+    let row = panel_row(&h, &shell, "Copper rock");
     assert!(row.y < WINDOW.y, "the Rock row scrolled into view: {row:?}");
     click(&mut h, &mut shell, &mut game, row);
     assert_eq!((game.editor.tool, game.editor.prop), (Tool::Place, PropKind::Rock));
@@ -331,3 +331,9 @@ mod fight_frames;
 
 #[path = "app_hotbar_tests.rs"]
 mod hotbars;
+
+#[path = "app_smithing_tests.rs"]
+mod smithing;
+
+#[path = "app_gear_tests.rs"]
+mod gear;
