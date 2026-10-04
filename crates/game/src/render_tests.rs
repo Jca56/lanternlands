@@ -51,7 +51,7 @@ fn target(gpu: &Gpu, format: wgpu::TextureFormat) -> wgpu::Texture {
 /// One device for every test here, and one test on it at a time. The
 /// test run segfaulted once with each test opening a device of its own,
 /// a dozen at once from as many threads; it has not with this.
-fn gpu() -> Option<(&'static Gpu, MutexGuard<'static, ()>)> {
+pub(crate) fn gpu() -> Option<(&'static Gpu, MutexGuard<'static, ()>)> {
     static GPU: OnceLock<Option<Gpu>> = OnceLock::new();
     static TURN: Mutex<()> = Mutex::new(());
     let turn = TURN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -72,6 +72,11 @@ fn shoot_with(name: &str, center: Vec2, zoom: f64, sprites: bool) -> Option<Shot
 
 /// The same, with whatever `extras` puts in the world besides the map.
 fn shoot_scene(name: &str, center: Vec2, zoom: f64, sprites: bool, extras: impl FnOnce(&SpriteSet) -> Vec<Placed>) -> Option<Shot> {
+    shoot_all(name, center, zoom, sprites, extras, &|_, _| false)
+}
+
+/// The same, with `spent` saying which tiles' nodes have given all they had.
+fn shoot_all(name: &str, center: Vec2, zoom: f64, sprites: bool, extras: impl FnOnce(&SpriteSet) -> Vec<Placed>, spent: &dyn Fn(i32, i32) -> bool) -> Option<Shot> {
     let Some((gpu, _turn)) = gpu() else {
         eprintln!("SKIPPED {name}: no GPU to draw with");
         return None;
@@ -81,7 +86,7 @@ fn shoot_scene(name: &str, center: Vec2, zoom: f64, sprites: bool, extras: impl 
     let camera = Camera { center, zoom };
     let mut scene = Scene::default();
     let look = if sprites { Look::find(&set) } else { Look::default() };
-    scene.build(&world, &camera, VIEW.size(), 1.0, &set, &look, &extras(&set));
+    scene.build(&world, &camera, VIEW.size(), 1.0, &set, &look, &extras(&set), spent);
 
     let window_format = wgpu::TextureFormat::Rgba8UnormSrgb;
     let mut renderer = WorldRenderer::new(gpu, window_format, &set.sheet);
@@ -302,4 +307,24 @@ fn a_ghost_lets_the_ground_show_through() {
     let (tunic, grass) = (bytes_of_hex(TUNIC), bytes_of_hex(STUDIO_GRASS));
     let half = [0, 1, 2].map(|c| (tunic[c] as u32 + grass[c] as u32) / 2);
     close(shot.at(ground + Vec2::new(0.0, -0.45)), half[0] << 16 | half[1] << 8 | half[2], 3, "the ghost's tunic over grass");
+}
+
+const COPPER: u32 = 0xc78246;
+const STONE: u32 = 0x8a8685;
+
+#[test]
+fn a_whole_rock_shows_its_copper_and_a_spent_one_is_bare_stone() {
+    let world = sim::testmap::build();
+    let (w, h) = (sim::testmap::WIDTH, sim::testmap::HEIGHT);
+    // A rock with no tree below it tall enough to be drawn over its
+    // copper (nothing else in the next rows reaches that high).
+    let clear = |p: &sim::Prop| world.props_in(p.x - 1, p.y + 1, p.x + 2, p.y + 3).all(|below| below.kind != PropKind::Tree);
+    let rock = world.props_in(4, 4, w - 4, h - 4).filter(|p| p.kind == PropKind::Rock).find(clear).expect("a rock with no tree in front of it");
+    let ground = Vec2::new(rock.x as f64 + 0.5, rock.y as f64 + 0.5);
+    // The middle of its biggest fleck of copper, from its anchor, in tiles.
+    let fleck = ground + Vec2::new(-0.21, -0.29);
+    let Some(whole) = shoot("rock-whole", ground, 1.0) else { return };
+    close(whole.at(fleck), COPPER, 3, "a whole rock's copper");
+    let Some(spent) = shoot_all("rock-spent", ground, 1.0, true, |_| Vec::new(), &|x, y| (x, y) == (rock.x, rock.y)) else { return };
+    close(spent.at(fleck), STONE, 3, "a spent rock, where the copper was");
 }

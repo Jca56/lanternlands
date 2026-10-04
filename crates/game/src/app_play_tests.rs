@@ -4,7 +4,7 @@
 use super::*;
 
 /// Let `seconds` of the game pass, a frame at a time.
-fn pass(h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game, seconds: f64) {
+pub(super) fn pass(h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game, seconds: f64) {
     let frames = (seconds / 0.05).ceil() as usize;
     for _ in 0..frames {
         h.advance(0.05);
@@ -13,7 +13,7 @@ fn pass(h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game, seconds: f64)
 }
 
 /// The game with the player stood on a tile of open grass, the view on them.
-fn playing(name: &str) -> (Harness, Shell<Game>, Game) {
+pub(super) fn playing(name: &str) -> (Harness, Shell<Game>, Game) {
     let (mut h, mut shell, mut game) = started(name);
     let open = |x: i32, y: i32| (-3..=3).all(|dy| (-3..=3).all(|dx| game.sim.world.walkable(x + dx, y + dy)));
     let (x, y) = (4..28).flat_map(|y| (4..44).map(move |x| (x, y))).find(|&(x, y)| open(x, y)).expect("open ground on the test map");
@@ -193,4 +193,173 @@ fn the_start_tool_sets_the_start_and_shows_a_ghost_there_only_while_editing() {
 
     key(&mut h, &mut shell, &mut game, Key::F(2), Modifiers::NONE);
     assert_eq!(game.extras().len(), 1);
+}
+
+// ---- mining -----------------------------------------------------------------
+
+/// The game with the player on open grass and a rock two tiles east.
+pub(super) fn at_a_rock(name: &str) -> (Harness, Shell<Game>, Game, (i32, i32)) {
+    let (mut h, mut shell, mut game) = playing(name);
+    let (x, y) = game.sim.player.tile;
+    let rock = (x + 2, y);
+    assert!(game.sim.world.place_prop(PropKind::Rock, rock.0, rock.1));
+    turn(&mut h, &mut shell, &mut game);
+    (h, shell, game, rock)
+}
+
+/// Press the left button on a tile of the world.
+pub(super) fn press_tile(h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game, tile: (i32, i32)) {
+    let at = screen_of(game, tile);
+    h.move_to(at);
+    turn(h, shell, game);
+    h.press();
+    turn(h, shell, game);
+    h.release();
+    turn(h, shell, game);
+}
+
+#[test]
+fn clicking_a_rock_mines_it_out_into_the_bag() {
+    let (mut h, mut shell, mut game, rock) = at_a_rock("mine");
+    press_tile(&mut h, &mut shell, &mut game, rock);
+    let mut floated = Vec::new();
+    for _ in 0..600 {
+        h.advance(0.05);
+        turn(&mut h, &mut shell, &mut game);
+        for line in game.hud.floating() {
+            if !floated.contains(&line.to_owned()) {
+                floated.push(line.to_owned());
+            }
+        }
+        if game.sim.is_spent(rock) {
+            break;
+        }
+    }
+    assert!(game.sim.is_spent(rock), "the rock was mined out");
+    assert_eq!(game.sim.inventory.count(Item::CopperOre), 3);
+    assert_eq!(game.sim.skills.level(Skill::Mining), 2);
+    assert_eq!(floated, vec!["+1 Copper ore", "+12 Mining xp"], "what was got floated up from the player");
+    assert_eq!(game.sim.player.tile, (rock.0 - 1, rock.1), "they stood beside it");
+    assert_eq!(game.facing, Facing::Right, "facing it");
+    assert_eq!(game.sim.world.prop_at(rock.0, rock.1).map(|p| p.kind), Some(PropKind::Rock), "the rock is still a rock on the map");
+}
+
+#[test]
+fn the_player_is_drawn_at_work_while_mining_and_idle_after() {
+    let (mut h, mut shell, mut game, rock) = at_a_rock("work_pose");
+    press_tile(&mut h, &mut shell, &mut game, rock);
+    pass(&mut h, &mut shell, &mut game, 1.0);
+    assert!(game.sim.player.activity().is_some());
+    let walk = game.look.player;
+    let work = [Pose::WorkA, Pose::WorkB].map(|pose| walk.sprite(Facing::Right, pose).unwrap().0);
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..16 {
+        h.advance(0.05);
+        turn(&mut h, &mut shell, &mut game);
+        if game.sim.player.activity().is_some() {
+            seen.insert(game.extras().last().unwrap().sprite);
+        }
+    }
+    assert!(work.iter().all(|sprite| seen.contains(sprite)) && seen.len() == 2, "both drawings of the swing, and only those");
+    pass(&mut h, &mut shell, &mut game, 40.0);
+    assert_eq!(game.extras().last().unwrap().sprite, walk.sprite(Facing::Right, Pose::Idle).unwrap().0);
+}
+
+#[test]
+fn a_spent_rock_comes_back_in_real_time_with_the_game_drawing_only_on_ticks() {
+    let (mut h, mut shell, mut game, rock) = at_a_rock("respawn");
+    press_tile(&mut h, &mut shell, &mut game, rock);
+    for _ in 0..600 {
+        h.advance(0.05);
+        turn(&mut h, &mut shell, &mut game);
+        if game.sim.is_spent(rock) {
+            break;
+        }
+    }
+    // Let the floating text and the level-up message fade and the view settle.
+    pass(&mut h, &mut shell, &mut game, 5.0);
+    let spent_tick = game.sim.ticks;
+    // Idle with a rock on its way back: a frame is asked for at the next
+    // tick, not at once.
+    h.advance(0.1);
+    let out = turn(&mut h, &mut shell, &mut game);
+    let wake = out.wake_after.expect("a wake for the next tick");
+    assert!(wake > 0.0 && wake <= TICK_SECONDS, "wake in {wake}");
+    // Frames a whole tick apart still count every tick.
+    for _ in 0..50 {
+        h.advance(TICK_SECONDS);
+        turn(&mut h, &mut shell, &mut game);
+    }
+    assert!(game.sim.ticks - spent_tick >= 49, "{} ticks in 50 frames a tick apart", game.sim.ticks - spent_tick);
+    pass(&mut h, &mut shell, &mut game, 30.0);
+    assert_eq!(game.sim.node_left(rock), Some(3), "whole again");
+    // And then nothing asks for frames at all.
+    h.advance(0.05);
+    assert_eq!(turn(&mut h, &mut shell, &mut game).wake_after, None);
+}
+
+#[test]
+fn the_bag_and_the_skills_open_with_their_keys_and_their_buttons() {
+    let (mut h, mut shell, mut game) = playing("panels");
+    assert!(!game.hud.bag_open && !game.hud.skills_open);
+    key(&mut h, &mut shell, &mut game, Key::Char('i'), Modifiers::NONE);
+    assert!(game.hud.bag_open);
+    key(&mut h, &mut shell, &mut game, Key::Char('k'), Modifiers::NONE);
+    assert!(game.hud.skills_open);
+    key(&mut h, &mut shell, &mut game, Key::Char('i'), Modifiers::NONE);
+    assert!(!game.hud.bag_open && game.hud.skills_open);
+
+    // The buttons sit in the window's bottom-right corner: Skills, then Bag.
+    let body = WidgetId::ROOT.with_u64(shell.screen.target(View::World).unwrap() as u64).with("body");
+    let bag = h.rect_of(body.with("Bag")).expect("a Bag button");
+    let skills = h.rect_of(body.with("Skills")).expect("a Skills button");
+    assert!(bag.max.x <= WINDOW.x && bag.max.y <= WINDOW.y && bag.min.x > WINDOW.x - 400.0 && skills.max.x <= bag.min.x);
+    assert!(bag.height() >= 55.0 && bag.width() >= 130.0, "a big target: {bag:?}");
+    click(&mut h, &mut shell, &mut game, bag.center());
+    assert!(game.hud.bag_open);
+    click(&mut h, &mut shell, &mut game, skills.center());
+    assert!(!game.hud.skills_open);
+}
+
+#[test]
+fn a_click_on_a_panel_or_a_button_does_not_walk_the_player() {
+    let (mut h, mut shell, mut game) = playing("shield");
+    key(&mut h, &mut shell, &mut game, Key::Char('i'), Modifiers::NONE);
+    let body = WidgetId::ROOT.with_u64(shell.screen.target(View::World).unwrap() as u64).with("body");
+    let slot = h.rect_of(body.with("slot").with_index(7)).expect("the bag's slots are laid out");
+    assert!(slot.width() >= 75.0 && slot.height() >= 75.0, "a big slot: {slot:?}");
+    click(&mut h, &mut shell, &mut game, slot.center());
+    assert_eq!(game.sim.player.goal(), None);
+    assert!(!game.sim.player.busy());
+}
+
+#[test]
+fn the_bag_has_thirty_slots_five_across_and_six_down() {
+    let (mut h, mut shell, mut game) = playing("slots");
+    key(&mut h, &mut shell, &mut game, Key::Char('i'), Modifiers::NONE);
+    let body = WidgetId::ROOT.with_u64(shell.screen.target(View::World).unwrap() as u64).with("body");
+    let slots: Vec<Rect> = (0..30).map(|i| h.rect_of(body.with("slot").with_index(i)).expect("a slot")).collect();
+    assert!(h.rect_of(body.with("slot").with_index(30)).is_none());
+    let first_row = slots.iter().filter(|s| s.min.y == slots[0].min.y).count();
+    let first_column = slots.iter().filter(|s| s.min.x == slots[0].min.x).count();
+    assert_eq!((first_row, first_column), (5, 6), "taller than wide");
+    // Slots run left to right, then down: the sixth starts the second row.
+    assert!(slots[5].min.x == slots[0].min.x && slots[5].min.y > slots[0].min.y);
+    // No two overlap, and all are inside the window.
+    for (i, a) in slots.iter().enumerate() {
+        assert!(a.min.x >= 0.0 && a.max.x <= WINDOW.x && a.min.y >= 0.0 && a.max.y <= WINDOW.y);
+        assert!(slots[i + 1..].iter().all(|b| !a.intersects(b)), "slot {i} overlaps another");
+    }
+}
+
+#[test]
+fn the_interface_is_put_away_while_editing() {
+    let (mut h, mut shell, mut game) = playing("hud_editing");
+    key(&mut h, &mut shell, &mut game, Key::Char('i'), Modifiers::NONE);
+    key(&mut h, &mut shell, &mut game, Key::F(2), Modifiers::NONE);
+    let body = WidgetId::ROOT.with_u64(shell.screen.target(View::World).unwrap() as u64).with("body");
+    assert!(h.rect_of(body.with("Bag")).is_none() && h.rect_of(body.with("slot").with_index(0)).is_none());
+    // The keys that open panels do nothing here.
+    key(&mut h, &mut shell, &mut game, Key::Char('k'), Modifiers::NONE);
+    assert!(!game.hud.skills_open);
 }

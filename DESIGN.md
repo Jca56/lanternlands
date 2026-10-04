@@ -2,7 +2,7 @@
 
 Working title (from the folder name). Claude's design doc; Alva's scratchpad is `Notes.md` (read-only for Claude, git-ignored).
 
-Status: design agreed for the core; milestones 1 (window, tile renderer, camera) and 2 (map editor) are done, and milestone 3 (ticks and walking) is built.
+Status: design agreed for the core; milestones 1 (window, tile renderer, camera), 2 (map editor), 3 (ticks and walking) and 4 (bag, skills, mining) are done.
 
 ## Pitch
 
@@ -31,8 +31,9 @@ Locked with Alva on 2026-10-04.
 | Combat depth | Auto-attack on ticks + abilities on a hotbar (cooldowns; mana for spells) |
 | Magic | Mana-based, no runes |
 | Healing | Potions (Alchemy). Food gives small buffs, WoW-style, not healing |
-| Gathering | Quick nodes: a few ticks, loot, node respawns later. Richer and rarer nodes sit deeper in dangerous territory |
-| Progression | Per-skill levels trained by doing, no classes |
+| Gathering | Quick nodes: a few ticks, loot, node respawns later. Richer and rarer nodes sit deeper in dangerous territory. A node is worked in swings, each with a chance that climbs with level; it gives a few, then is spent until it comes back |
+| Tools | No pickaxe needed yet: mining is bare-handed until equipment exists (milestone 6), when pickaxes make you faster and unlock harder rocks |
+| Progression | Per-skill levels trained by doing, no classes. Short and punchy: the cap is level 50, and each level should unlock something |
 | Alchemy inputs | Herbalism (gathering skill) + monster parts |
 | Out | Woodcutting, Firemaking, Cooking-as-healing, rune-based magic |
 | Setting | Classic medieval fantasy |
@@ -42,7 +43,7 @@ Locked with Alva on 2026-10-04.
 | Code layout | Cargo workspace: a pure-std headless simulation crate (ticks, world, pathfinding, combat, skills) + the game binary (rendering, UI, editor) |
 | Screen | The world fills the window; the HUD floats over it (hotbar along the bottom, vitals in a corner, big panels open on demand) |
 | Travel | One brisk speed, no stamina or run energy. Faster travel (mounts, teleports) can be unlocked later as a reward |
-| Inventory | Fixed grid of slots; materials stack, gear does not. Bank in towns |
+| Inventory | 30 slots, 5 across and 6 down (taller than wide); materials stack, gear does not. Bank in towns |
 | World layout | One seamless overworld streamed in chunks; dungeons, caves, and building interiors are separate maps entered through doors |
 
 ## Skills (approved 2026-10-04)
@@ -60,6 +61,28 @@ Locked with Alva on 2026-10-04.
 | Crafting | Alchemy | Brewing potions |
 
 Later candidates: Cooking (buff food), Fishing, Crafting (leather / jewellery), something exploration-flavoured (Cartography? Lockpicking?).
+
+## Content so far (proposed numbers, all tunable)
+
+Built so the systems can be played; Alva has not signed these numbers off.
+
+**Levels.** Experience to be level L, with n = L - 1: `20 n + 8 n^2.5`.
+
+| Level | 2 | 5 | 10 | 20 | 30 | 40 | 50 |
+|---|---|---|---|---|---|---|---|
+| Experience in all | 28 | 336 | 2,124 | 12,942 | 36,776 | 76,708 | 135,436 |
+
+Every skill starts at level 1.
+
+**Items.** Copper ore (stacks).
+
+**Nodes.**
+
+| Node | Skill | Level | Gives | Holds | A swing | Chance | Experience | Comes back |
+|---|---|---|---|---|---|---|---|---|
+| Copper rock | Mining | 1 | Copper ore | 3 | 3 ticks (1.2 s) | 55%, +3% a level, at most 95% | 12 each | 75 ticks (30 s) |
+
+So the first rock is level 2, and a level-1 miner empties a rock in about 6.5 s on average.
 
 ## System sketches (proposals)
 
@@ -108,7 +131,7 @@ Muted, warm, old-school. In the test sheet B is the A panel pushed through two a
 
 ## How it is built
 
-Milestones 1 to 3, as of 2026-10-04.
+Milestones 1 to 4, as of 2026-10-04.
 
 - **Layout.** A Cargo workspace: `crates/sim` (pure std: terrain, the chunked world, props and markers, pathfinding, the ticking player, the edit tools and their history, map files, a test map) and `crates/game` (the binary `explore-the-world`: camera, sprite sheet packer, scene builder, the wgpu passes, the map editor and its panel, the Lantern UI 2 host). Art sources in `art/`, what the game loads in `assets/`.
 - **Window.** Lantern UI 2 by path, unmodified. One area with no header and no title bar; the world fills it and the interface will draw over it.
@@ -123,8 +146,11 @@ Milestones 1 to 3, as of 2026-10-04.
 - **The player's sprite.** `assets/sprites/player-01.png` (source in `art/sprites/`): three drawn facings (down, up, side; left is the side mirrored), each with an idle pose and a walk of stride, pass, other stride. A tile's step is a stride then a pass, and strides take turns. A diagonal step shows the side view. The manifest's `[grids.name]` table cuts such a sheet into sprites.
 - **The view while playing.** Always on the player, gliding after them; the wheel still zooms. Nothing redraws while the player and the view are at rest.
 - **Player start.** A marker in the map (the editor's Start tool; a see-through player shows it while editing), saved in its chunk's file. With none, the player starts on the nearest standable tile to the map's middle.
-- **Controls for now.** Click to walk. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
-- **How it is checked.** 162 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map.
+- **Skills, bag, nodes.** In `sim`: nine skills with their own experience (cap 50), a 30-slot bag (drawn 5 across, 6 down) where materials stack, and props that are nodes. Clicking a node walks the player beside it and sets them to work: a swing every few ticks, a seeded dice roll for each, experience and an item on a hit, and the node spent after it has given what it holds until its time is up. Walking off drops the work; a full bag stops it. The simulation reports what happened as events and the game decides how to show them.
+- **The interface while playing** (`hud.rs`): Skills and Bag buttons in the bottom-right corner (also K and I), panels that stand on them, what was just got floating up from the player, and what the game has to say (a level gained, a full bag) in big letters at the top. Lantern UI 2's own toasts are not used while playing: they land on the buttons.
+- **More drawings.** The player's sheet gained a wind-up and a strike for each facing; a spent rock is the rock without its copper; items have 128 px icons in `assets/items/` (sources in `art/items/`).
+- **Controls for now.** Click to walk, or to work a rock. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
+- **How it is checked.** 201 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels and the bag can be looked at and their pixels checked.
 
 ### Calls Claude made, Alva's to overrule
 
@@ -147,12 +173,18 @@ Milestones 1 to 3, as of 2026-10-04.
 17. The game stands still while the editor is open. Closing it stops the player and moves them off any ground that can no longer be stood on.
 18. While playing the view cannot be moved off the player.
 19. Where the player is is not saved yet: every launch starts at the start.
-20. Props are still the four placeholder kinds. They become data-defined objects when they start to do things (mining, picking).
+20. Nothing the player earns is saved yet: the bag and the skills start empty every launch, like their position.
+21. A node can be worked from any of the eight tiles around it.
+22. At work the player winds up and strikes every tick, though the roll comes only when a swing is done.
+23. The game says things itself, at the top of the screen, rather than through Lantern UI 2's toasts.
+24. The dice are seeded from the clock when the game starts.
+25. Props are still the four placeholder kinds; the rock is a copper rock. They become data-defined objects when they start to do things (mining, picking).
 
 ## Open questions
 
-- Inventory size, bank size
-- Level cap and XP curve
+- Bank size
+- The Skills panel's look: Alva does not like Lantern UI 2's stock progress bars there. To be redrawn as our own rows (it is one function in `hud.rs`); what they should look like is not decided
+- The XP curve's numbers (proposed above), and what each level unlocks
 - Quests and NPC dialogue: when, and how deep
 - Where assets live for a deployed binary (it finds them beside itself, else in the source tree)
 - Ground edges: keep the shader's rounded steps, or hand-drawn transitions?
@@ -165,8 +197,8 @@ Milestones 1 to 3, as of 2026-10-04.
 0. Art style test sheet (terrain, ore rock, herb, player, goblin) to lock the look, tile size, and palette. **Done 2026-10-04**: style approved, palette B Earthy
 1. Window, tile renderer, camera. **Done 2026-10-04**: Alva ran it ("It looks beautiful!")
 2. Map editor: paint, place, save, load. **Done 2026-10-04**: Alva used it ("that's so cool!"), asked for a move tool, and that "works great"
-3. Tick simulation, click-to-move pathfinding. **Built 2026-10-04** with full walk cycles, awaiting Alva's look
-4. Inventory, skills and XP, Mining nodes
+3. Tick simulation, click-to-move pathfinding. **Done 2026-10-04** with full walk cycles: Alva "spent so much time just walking around"
+4. Inventory, skills and XP, Mining nodes. **Done 2026-10-04**: Alva played it ("it works!"), asked for the bag to be 5 across and 6 down, and does not like the stock progress bars in the Skills panel (to be redrawn later)
 5. Combat: melee auto-attack, abilities, monsters, drops, death
 6. Smithing and equipment
 7. Herbalism, Alchemy, potions

@@ -1,8 +1,12 @@
 //! The player, and the simulation that steps on every tick.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
+use crate::items::{Inventory, Item};
+use crate::nodes::Node;
 use crate::path;
+use crate::rng::Rng;
+use crate::skills::{Skill, Skills};
 use crate::world::{Marker, World};
 
 /// How far from where it was asked for a place to stand is looked for,
@@ -21,6 +25,41 @@ pub struct Player {
     /// The tiles still to step through, and where that leads.
     path: VecDeque<(i32, i32)>,
     goal: Option<(i32, i32)>,
+    /// The tile of the prop they are on their way to use.
+    intent: Option<(i32, i32)>,
+    activity: Option<Activity>,
+}
+
+/// Something the player is busy at, standing still.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Activity {
+    /// Working the node on tile `at`, `swing` ticks into a swing.
+    Working { at: (i32, i32), swing: u32 },
+}
+
+/// Something that happened, for whoever shows the game to tell the
+/// player about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Event {
+    /// A swing at the node on `at` landed, and got something or not.
+    Swing { at: (i32, i32), hit: bool },
+    Got { item: Item, count: u32 },
+    Xp { skill: Skill, amount: u32 },
+    LevelUp { skill: Skill, level: u8 },
+    /// There was no room for what would have been got.
+    InventoryFull,
+    /// The node on `at` has given all it had.
+    Spent { at: (i32, i32) },
+    /// The node asks a level of a skill the player does not have.
+    TooHard { skill: Skill, level: u8 },
+}
+
+/// What is left in a node that has been worked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Worked {
+    left: u8,
+    /// The tick a spent one is whole again.
+    back_at: Option<u64>,
 }
 
 impl Player {
@@ -38,14 +77,30 @@ impl Player {
     pub fn path(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
         self.path.iter().copied()
     }
+
+    pub fn activity(&self) -> Option<Activity> {
+        self.activity
+    }
+
+    /// Whether they are doing anything at all: walking, on their way to
+    /// something, or at work.
+    pub fn busy(&self) -> bool {
+        self.goal.is_some() || self.moved() || self.intent.is_some() || self.activity.is_some()
+    }
 }
 
 /// The world and everything in it that acts.
 pub struct Sim {
     pub world: World,
     pub player: Player,
+    pub skills: Skills,
+    pub inventory: Inventory,
     /// How many ticks have passed.
     pub ticks: u64,
+    rng: Rng,
+    /// Nodes that are not whole, by tile.
+    worked: HashMap<(i32, i32), Worked>,
+    events: Vec<Event>,
 }
 
 /// The tile nearest `near` that can be stood on, `near` itself if it
@@ -67,19 +122,68 @@ impl Sim {
         let middle = world.bounds().map_or((0, 0), |[x0, y0, x1, y1]| ((x0 + x1) / 2, (y0 + y1) / 2));
         let wanted = world.marker(Marker::PlayerStart).unwrap_or(middle);
         let tile = place_to_stand(&world, wanted).unwrap_or(wanted);
-        Sim { world, player: Player { tile, from: tile, steps: 0, path: VecDeque::new(), goal: None }, ticks: 0 }
+        let player = Player { tile, from: tile, steps: 0, path: VecDeque::new(), goal: None, intent: None, activity: None };
+        Sim { world, player, skills: Skills::default(), inventory: Inventory::default(), ticks: 0, rng: Rng::new(0x5EED), worked: HashMap::new(), events: Vec::new() }
     }
 
-    /// Set the player walking to `target`, or as near it as they can get.
+    /// Roll different dice from here on.
+    pub fn reseed(&mut self, seed: u64) {
+        self.rng = Rng::new(seed);
+    }
+
+    /// What happened since this was last asked.
+    pub fn take_events(&mut self) -> Vec<Event> {
+        std::mem::take(&mut self.events)
+    }
+
+    /// The node on a tile, if what stands there is one.
+    pub fn node_at(&self, tile: (i32, i32)) -> Option<Node> {
+        self.world.prop_at(tile.0, tile.1)?.kind.node()
+    }
+
+    /// How many more a node on a tile will give; `None` where there is
+    /// no node.
+    pub fn node_left(&self, tile: (i32, i32)) -> Option<u8> {
+        let node = self.node_at(tile)?;
+        Some(self.worked.get(&tile).map_or(node.yields, |w| w.left))
+    }
+
+    /// Whether the node on a tile has given all it had, for now.
+    pub fn is_spent(&self, tile: (i32, i32)) -> bool {
+        self.node_left(tile) == Some(0)
+    }
+
+    /// Whether a tick still to come will change something even with the
+    /// player standing idle: a spent node coming back.
+    pub fn waiting(&self) -> bool {
+        self.worked.values().any(|w| w.back_at.is_some())
+    }
+
+    /// What a press on a tile means: work the node there, or walk there.
+    pub fn click(&mut self, tile: (i32, i32)) {
+        if self.node_at(tile).is_none() {
+            return self.walk_to(tile);
+        }
+        // To a node: beside it, and then to work.
+        self.walk_to(tile);
+        self.player.intent = Some(tile);
+    }
+
+    /// Set the player walking to `target`, or as near it as they can
+    /// get. Whatever else they were at is dropped.
     pub fn walk_to(&mut self, target: (i32, i32)) {
         self.player.path = path::find(&self.world, self.player.tile, target).into();
         self.player.goal = self.player.path.back().copied();
+        self.player.intent = None;
+        self.player.activity = None;
     }
 
     /// Stop the player where they stand.
     pub fn stop(&mut self) {
         self.player.path.clear();
         self.player.goal = None;
+        self.player.intent = None;
+        self.player.activity = None;
     }
 
     /// The world changed under the player (the map was edited): if they
@@ -91,11 +195,90 @@ impl Sim {
             self.player.tile = tile;
         }
         self.player.from = self.player.tile;
+        // What was worked may be gone, or be something else now.
+        let world = &self.world;
+        self.worked.retain(|&(x, y), _| world.prop_at(x, y).is_some_and(|p| p.kind.node().is_some()));
     }
 
-    /// One tick: the player takes the next step of their way.
+    /// One tick: spent nodes come back, the player takes the next step
+    /// of their way, starts what they came to do, and works at it.
     pub fn tick(&mut self) {
         self.ticks += 1;
+        let now = self.ticks;
+        self.worked.retain(|_, w| w.back_at.is_none_or(|at| at > now));
+        self.step();
+        self.arrive();
+        self.work();
+    }
+
+    /// Having got where they were going, start on what they went for.
+    fn arrive(&mut self) {
+        if !self.player.path.is_empty() {
+            return;
+        }
+        let Some(at) = self.player.intent.take() else {
+            return;
+        };
+        let (dx, dy) = (at.0 - self.player.tile.0, at.1 - self.player.tile.1);
+        let beside = dx.abs() <= 1 && dy.abs() <= 1 && (dx, dy) != (0, 0);
+        let Some(node) = self.node_at(at).filter(|_| beside) else {
+            return;
+        };
+        if self.is_spent(at) {
+            self.events.push(Event::Spent { at });
+        } else if self.skills.level(node.skill) < node.level {
+            self.events.push(Event::TooHard { skill: node.skill, level: node.level });
+        } else if !self.inventory.has_room_for(node.item) {
+            self.events.push(Event::InventoryFull);
+        } else {
+            self.player.activity = Some(Activity::Working { at, swing: 0 });
+        }
+    }
+
+    /// A tick of work: when a swing is done, roll for what it got.
+    fn work(&mut self) {
+        let Some(Activity::Working { at, swing }) = self.player.activity else {
+            return;
+        };
+        let Some(node) = self.node_at(at).filter(|_| !self.is_spent(at)) else {
+            // It went from under them: edited away, or spent.
+            self.player.activity = None;
+            return;
+        };
+        if swing + 1 < node.swing_ticks {
+            self.player.activity = Some(Activity::Working { at, swing: swing + 1 });
+            return;
+        }
+        self.player.activity = Some(Activity::Working { at, swing: 0 });
+        let hit = self.rng.chance(node.chance_at(self.skills.level(node.skill)));
+        self.events.push(Event::Swing { at, hit });
+        if !hit {
+            return;
+        }
+        if self.inventory.add(node.item, 1) > 0 {
+            self.events.push(Event::InventoryFull);
+            self.player.activity = None;
+            return;
+        }
+        self.events.push(Event::Got { item: node.item, count: 1 });
+        self.events.push(Event::Xp { skill: node.skill, amount: node.xp });
+        if let Some(level) = self.skills.gain(node.skill, node.xp) {
+            self.events.push(Event::LevelUp { skill: node.skill, level });
+        }
+        let worked = self.worked.entry(at).or_insert(Worked { left: node.yields, back_at: None });
+        worked.left -= 1;
+        if worked.left == 0 {
+            worked.back_at = Some(self.ticks + node.respawn_ticks);
+            self.events.push(Event::Spent { at });
+            self.player.activity = None;
+        } else if !self.inventory.has_room_for(node.item) {
+            self.events.push(Event::InventoryFull);
+            self.player.activity = None;
+        }
+    }
+
+    /// The player takes the next step of their way.
+    fn step(&mut self) {
         let player = &mut self.player;
         player.from = player.tile;
         let Some(&next) = player.path.front() else {
@@ -112,139 +295,15 @@ impl Sim {
             }
         } else if let Some(goal) = player.goal {
             // Something is in the way that was not: find another way,
-            // and take its first step on the next tick.
+            // and take its first step on the next tick. They are still
+            // going for what they were going for.
+            let intent = player.intent;
             self.walk_to(goal);
+            self.player.intent = intent;
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::terrain::Terrain;
-    use crate::world::PropKind;
-
-    fn field(width: i32, height: i32) -> World {
-        let mut world = World::new();
-        for y in 0..height {
-            for x in 0..width {
-                world.set_terrain(x, y, Terrain::Grass);
-            }
-        }
-        world
-    }
-
-    #[test]
-    fn the_player_starts_on_the_maps_start() {
-        let mut world = field(10, 10);
-        world.set_marker(Marker::PlayerStart, 7, 2);
-        assert_eq!(Sim::new(world).player.tile, (7, 2));
-    }
-
-    #[test]
-    fn with_no_start_they_stand_near_the_middle_and_never_in_a_tree() {
-        // A field's chunk spans 32 tiles, so its middle is (16, 16): off
-        // this field. The nearest ground to that is its corner.
-        assert_eq!(Sim::new(field(10, 10)).player.tile, (9, 9));
-        // Forty tiles span two chunks each way: the middle is (32, 32).
-        let mut world = field(40, 40);
-        world.place_prop(PropKind::Tree, 32, 32);
-        let sim = Sim::new(world);
-        assert_ne!(sim.player.tile, (32, 32));
-        assert!(sim.world.walkable(sim.player.tile.0, sim.player.tile.1));
-        assert_eq!(path::find(&sim.world, sim.player.tile, (32, 32)), vec![], "they are right beside it");
-    }
-
-    #[test]
-    fn a_start_that_cannot_be_stood_on_puts_them_beside_it() {
-        let mut world = field(10, 10);
-        world.set_marker(Marker::PlayerStart, 5, 5);
-        world.set_terrain(5, 5, Terrain::Water);
-        let sim = Sim::new(world);
-        assert_eq!(sim.player.tile, (5, 4));
-    }
-
-    #[test]
-    fn an_empty_world_does_not_stop_the_game_starting() {
-        let sim = Sim::new(World::new());
-        assert_eq!(sim.player.tile, (0, 0));
-    }
-
-    #[test]
-    fn walking_takes_one_tile_a_tick_and_stops_at_the_goal() {
-        let mut sim = Sim::new(field(10, 10));
-        sim.player.tile = (0, 0);
-        sim.walk_to((4, 2));
-        assert_eq!(sim.player.goal(), Some((4, 2)));
-        let mut seen = Vec::new();
-        for _ in 0..6 {
-            sim.tick();
-            seen.push((sim.player.tile, sim.player.moved()));
-        }
-        assert_eq!(seen, vec![((1, 1), true), ((2, 2), true), ((3, 2), true), ((4, 2), true), ((4, 2), false), ((4, 2), false)]);
-        assert_eq!((sim.player.steps, sim.ticks, sim.player.goal()), (4, 6, None));
-    }
-
-    #[test]
-    fn a_new_goal_mid_walk_turns_them_from_where_they_are() {
-        let mut sim = Sim::new(field(10, 10));
-        sim.player.tile = (0, 0);
-        sim.walk_to((9, 0));
-        sim.tick();
-        sim.tick();
-        sim.walk_to((2, 5));
-        for _ in 0..5 {
-            sim.tick();
-        }
-        assert_eq!(sim.player.tile, (2, 5));
-    }
-
-    #[test]
-    fn a_way_that_gets_blocked_is_found_again() {
-        let mut sim = Sim::new(field(10, 3));
-        sim.player.tile = (0, 1);
-        sim.walk_to((9, 1));
-        sim.tick();
-        // A wall of trees goes up ahead, with a gap at the bottom.
-        for y in 0..2 {
-            sim.world.place_prop(PropKind::Tree, 2, y);
-        }
-        for _ in 0..20 {
-            sim.tick();
-        }
-        assert_eq!(sim.player.tile, (9, 1), "they went round");
-    }
-
-    #[test]
-    fn asked_to_walk_into_water_they_walk_to_the_shore() {
-        let mut world = field(10, 3);
-        for y in 0..3 {
-            world.set_terrain(6, y, Terrain::Water);
-        }
-        let mut sim = Sim::new(world);
-        sim.player.tile = (0, 1);
-        sim.walk_to((6, 1));
-        assert_eq!(sim.player.goal(), Some((5, 1)));
-        for _ in 0..10 {
-            sim.tick();
-        }
-        assert_eq!(sim.player.tile, (5, 1));
-    }
-
-    #[test]
-    fn settling_moves_a_player_off_ground_that_was_edited_away() {
-        let mut sim = Sim::new(field(10, 10));
-        sim.player.tile = (4, 4);
-        sim.walk_to((9, 9));
-        sim.world.place_prop(PropKind::Rock, 4, 4);
-        sim.settle_player();
-        assert_ne!(sim.player.tile, (4, 4));
-        assert!(sim.world.walkable(sim.player.tile.0, sim.player.tile.1));
-        assert_eq!(sim.player.goal(), None);
-        assert!(!sim.player.moved());
-        // On good ground, settling leaves them be.
-        let before = sim.player.tile;
-        sim.settle_player();
-        assert_eq!(sim.player.tile, before);
-    }
-}
+#[path = "player_tests.rs"]
+mod tests;

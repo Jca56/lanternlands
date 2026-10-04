@@ -76,6 +76,7 @@ pub struct Placed {
 pub struct Look {
     tree: Option<SpriteId>,
     rock: Option<SpriteId>,
+    rock_spent: Option<SpriteId>,
     herb_purple: Option<SpriteId>,
     herb_cyan: Option<SpriteId>,
     tuft: Option<SpriteId>,
@@ -84,13 +85,21 @@ pub struct Look {
 
 impl Look {
     pub fn find(set: &SpriteSet) -> Look {
-        Look { tree: set.id("tree"), rock: set.id("rock"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft"), player: WalkSprites::find(set, "player") }
+        Look { tree: set.id("tree"), rock: set.id("rock"), rock_spent: set.id("rock_spent"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft"), player: WalkSprites::find(set, "player") }
     }
 
     /// The names of the sprites it looked for and did not find.
     pub fn missing(&self) -> Vec<String> {
-        let all = [("tree", self.tree), ("rock", self.rock), ("herb_purple", self.herb_purple), ("herb_cyan", self.herb_cyan), ("tuft", self.tuft)];
+        let all = [("tree", self.tree), ("rock", self.rock), ("rock_spent", self.rock_spent), ("herb_purple", self.herb_purple), ("herb_cyan", self.herb_cyan), ("tuft", self.tuft)];
         all.into_iter().filter(|(_, id)| id.is_none()).map(|(name, _)| name.to_owned()).chain(self.player.missing("player")).collect()
+    }
+
+    /// The sprite a prop is drawn with once it has given all it had.
+    fn spent(&self, kind: PropKind) -> Option<SpriteId> {
+        match kind {
+            PropKind::Rock => self.rock_spent,
+            _ => None,
+        }
     }
 
     /// The sprite a kind of prop is drawn with, if the assets have it.
@@ -122,9 +131,10 @@ pub struct Scene {
 
 impl Scene {
     /// Everything a view of `size` pixels shows: the map, and `extras`
-    /// standing among its props.
+    /// standing among its props. `spent` says whether the node on a
+    /// tile has given all it had.
     #[allow(clippy::too_many_arguments)]
-    pub fn build(&mut self, world: &World, camera: &Camera, size: Vec2, scale: f64, set: &SpriteSet, look: &Look, extras: &[Placed]) {
+    pub fn build(&mut self, world: &World, camera: &Camera, size: Vec2, scale: f64, set: &SpriteSet, look: &Look, extras: &[Placed], spent: &dyn Fn(i32, i32) -> bool) {
         let seen = camera.visible(size, scale);
         let origin = camera.center.floor();
         self.origin = [origin.x as i32, origin.y as i32];
@@ -150,7 +160,8 @@ impl Scene {
         let (x0, x1) = (seen.min.x.floor() as i32 - 2, seen.max.x.floor() as i32 + 3);
         let (y0, y1) = (seen.min.y.floor() as i32 - 1, seen.max.y.floor() as i32 + 4);
         for prop in world.props_in(x0, y0, x1, y1) {
-            if let Some(id) = look.prop(prop.kind) {
+            let drawn = look.spent(prop.kind).filter(|_| spent(prop.x, prop.y)).or(look.prop(prop.kind));
+            if let Some(id) = drawn {
                 let ground = Vec2::new(prop.x as f64 + 0.5, prop.y as f64 + 0.5);
                 self.stand(set, id, ground, origin, false, [1.0; 4]);
             }
@@ -254,15 +265,15 @@ mod tests {
     fn built(center: Vec2, size: Vec2) -> Scene {
         let (world, set) = (sim::testmap::build(), set());
         let mut scene = Scene::default();
-        scene.build(&world, &Camera::new(center), size, 1.0, &set, &Look::find(&set), &[]);
+        scene.build(&world, &Camera::new(center), size, 1.0, &set, &Look::find(&set), &[], &|_, _| false);
         scene
     }
 
     #[test]
     fn every_sprite_the_scene_asks_for_is_in_the_assets() {
         assert_eq!(Look::find(&set()).missing(), Vec::<String>::new());
-        // With no assets: the five of the map, and the walker's twelve.
-        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 17);
+        // With no assets: the six of the map, and the player's eighteen.
+        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 24);
     }
 
     #[test]
@@ -306,7 +317,7 @@ mod tests {
         let center = Vec2::new(tree.x as f64 + 0.5, tree.y as f64 + 0.5);
         let mut scene = Scene::default();
         let look = Look::find(&set);
-        scene.build(&world, &Camera::new(center), Vec2::new(400.0, 400.0), 1.0, &set, &look, &[]);
+        scene.build(&world, &Camera::new(center), Vec2::new(400.0, 400.0), 1.0, &set, &look, &[], &|_, _| false);
         let sprite = set.get(look.tree.unwrap());
         let want = (center - sprite.anchor - Vec2::new(tree.x as f64, tree.y as f64)).to_gpu();
         assert!(scene.sprites.iter().any(|s| s.pos == want && s.uv == sprite.uv), "the tree is not where its anchor puts it");
@@ -320,7 +331,7 @@ mod tests {
         let ground = Vec2::new(24.5, 14.5);
         let extras = [Placed { sprite: id, ground, flip: false, tint: [1.0; 4] }, Placed { sprite: id, ground, flip: true, tint: [0.5; 4] }];
         let mut scene = Scene::default();
-        scene.build(&world, &Camera::new(ground), Vec2::new(400.0, 400.0), 1.0, &set, &look, &extras);
+        scene.build(&world, &Camera::new(ground), Vec2::new(400.0, 400.0), 1.0, &set, &look, &extras, &|_, _| false);
         let sprite = set.get(id);
         let [u0, v0, u1, v1] = sprite.uv;
         let plain = scene.sprites.iter().find(|s| s.uv == sprite.uv).expect("the extra is drawn");
@@ -334,6 +345,28 @@ mod tests {
         // And they are sorted in with the rest.
         let feet: Vec<f64> = scene.standing.iter().map(|(ground, _)| ground.y).collect();
         assert!(feet.windows(2).all(|w| w[0] <= w[1]));
+    }
+
+    #[test]
+    fn a_spent_rock_is_drawn_bare_and_everything_else_as_it_was() {
+        let (world, set) = (sim::testmap::build(), set());
+        let look = Look::find(&set);
+        let rock = world.props_in(0, 0, sim::testmap::WIDTH, sim::testmap::HEIGHT).find(|p| p.kind == PropKind::Rock).expect("a rock");
+        let center = Vec2::new(rock.x as f64 + 0.5, rock.y as f64 + 0.5);
+        let drawn = |spent: &dyn Fn(i32, i32) -> bool| {
+            let mut scene = Scene::default();
+            scene.build(&world, &Camera::new(center), Vec2::new(600.0, 600.0), 1.0, &set, &look, &[], spent);
+            scene.sprites
+        };
+        let (whole, bare) = (set.get(look.rock.unwrap()).uv, set.get(look.rock_spent.unwrap()).uv);
+        let before = drawn(&|_, _| false);
+        let after = drawn(&|x, y| (x, y) == (rock.x, rock.y));
+        assert!(before.iter().all(|s| s.uv != bare));
+        assert_eq!(after.iter().filter(|s| s.uv == bare).count(), 1);
+        assert_eq!(after.iter().filter(|s| s.uv == whole).count() + 1, before.iter().filter(|s| s.uv == whole).count());
+        assert_eq!(after.len(), before.len());
+        // Asked of a tree, it changes nothing: a tree is no node.
+        assert_eq!(drawn(&|_, _| true).iter().filter(|s| s.uv == set.get(look.tree.unwrap()).uv).count(), before.iter().filter(|s| s.uv == set.get(look.tree.unwrap()).uv).count());
     }
 
     #[test]

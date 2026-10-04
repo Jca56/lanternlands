@@ -7,6 +7,7 @@ mod assets;
 mod atlas;
 mod camera;
 mod editor;
+mod hud;
 mod palette;
 mod panel;
 mod render;

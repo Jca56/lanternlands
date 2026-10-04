@@ -7,14 +7,21 @@
 pub const TICK_SECONDS: f64 = 0.4;
 
 pub mod edit;
+pub mod items;
 pub mod mapfile;
+pub mod nodes;
 pub mod noise;
 pub mod path;
 pub mod player;
+pub mod rng;
+pub mod skills;
 pub mod terrain;
 pub mod testmap;
 pub mod world;
 
-pub use player::{Player, Sim};
+pub use items::{Inventory, Item, Stack};
+pub use nodes::Node;
+pub use player::{Activity, Event, Player, Sim};
+pub use skills::{Skill, Skills};
 pub use terrain::Terrain;
 pub use world::{CHUNK, Marker, Prop, PropKind, Tile, World};

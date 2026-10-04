@@ -3,7 +3,7 @@
 
 use lntrn_math::{Color, Rect, Vec2};
 use lntrn_ui::{AreaCx, CursorIcon, Dialog, Key, Response, Sense, ShellRequest, Ui};
-use sim::{Marker, TICK_SECONDS};
+use sim::{Activity, Marker, TICK_SECONDS};
 
 use super::Game;
 use crate::anim::{Facing, Pose};
@@ -14,9 +14,13 @@ use crate::scene::Placed;
 const ZOOM_PER_NOTCH: f64 = 1.15;
 /// How fast the keys move the view, in logical pixels a second.
 const KEY_PAN_SPEED: f64 = 1000.0;
-/// The longest step the keys take at once, however long the last frame
-/// took.
+/// The longest step anything smooth takes at once (the keys' push, the
+/// view's glide), however long the last frame took.
 const LONGEST_STEP: f64 = 0.1;
+/// The longest the game's clock runs on from one frame to the next.
+const LONGEST_WAIT: f64 = 1.0;
+/// How far above their feet the top of the player's head is, in tiles.
+const HEAD_HEIGHT: f64 = 1.45;
 /// How quickly the view closes on the player: the share of the gap it
 /// covers each second is all but `e` to minus this.
 const FOLLOW_RATE: f64 = 8.0;
@@ -102,7 +106,9 @@ impl Game {
             cx.request(ShellRequest::Dialog(Dialog::notice("The map did not load", &why)));
         }
         let now = ui.now();
-        let dt = self.clock.replace(now).map_or(0.0, |last| (now - last).clamp(0.0, LONGEST_STEP));
+        // The game's clock keeps real time between frames, short of a
+        // stall; a frame that long is not a second of the game.
+        let dt = self.clock.replace(now).map_or(0.0, |last| (now - last).clamp(0.0, LONGEST_WAIT));
         let hand = ui.interact(ui.id("world"), self.view, Sense::DRAG);
         self.zoom(ui, hand.hovered);
         if self.editing {
@@ -114,40 +120,69 @@ impl Game {
         }
     }
 
-    /// Playing: a press walks the player there, the clock ticks while
-    /// they have somewhere to go, and the view glides after them.
+    /// Playing: a press walks the player there or sets them to work on
+    /// what is there, the clock ticks while anything is going on, the
+    /// view glides after the player, and the interface floats over it all.
     fn play(&mut self, ui: &mut Ui, hand: &Response, dt: f64) {
-        if hand.pressed {
-            let at = self.camera.to_world(ui.state.pointer, self.view, self.scale);
-            self.sim.walk_to((at.x.floor() as i32, at.y.floor() as i32));
+        let at = self.camera.to_world(ui.state.pointer, self.view, self.scale);
+        let under = (at.x.floor() as i32, at.y.floor() as i32);
+        if hand.hovered && self.sim.node_left(under).is_some_and(|left| left > 0) {
+            ui.state.cursor_icon = CursorIcon::Pointer;
         }
-        let busy = self.sim.player.goal().is_some() || self.sim.player.moved();
-        if busy {
+        if hand.pressed {
+            if !self.sim.player.busy() {
+                // From a standstill, the first tick comes at once.
+                self.phase = TICK_SECONDS;
+            }
+            self.sim.click(under);
+        }
+        let busy = self.sim.player.busy();
+        if busy || self.sim.waiting() {
             self.phase += dt;
             while self.phase >= TICK_SECONDS {
                 self.phase -= TICK_SECONDS;
                 self.sim.tick();
-                let (from, tile) = (self.sim.player.from, self.sim.player.tile);
-                self.facing = Facing::of_step(tile.0 - from.0, tile.1 - from.1).unwrap_or(self.facing);
+                self.face();
             }
         }
-        if self.sim.player.goal().is_none() && !self.sim.player.moved() {
+        if !self.sim.player.busy() && !self.sim.waiting() {
             self.phase = TICK_SECONDS;
         }
+        let now = ui.now();
+        self.hud.hear(&self.sim.take_events(), now);
 
         let target = self.player_ground();
         let gap = target - self.camera.center;
         let following = gap.length() > FOLLOW_SETTLED;
-        self.camera.center = if following { self.camera.center + gap * (1.0 - (-FOLLOW_RATE * dt).exp()) } else { target };
-        if busy || following {
-            ui.state.request_redraw_after(0.0);
-        }
+        let smooth = dt.min(LONGEST_STEP);
+        self.camera.center = if following { self.camera.center + gap * (1.0 - (-FOLLOW_RATE * smooth).exp()) } else { target };
 
         if let Some((x, y)) = self.sim.player.goal() {
             let middle = self.camera.to_screen(Vec2::new(x as f64 + 0.5, y as f64 + 0.5), self.view, self.scale);
             let tile_px = self.camera.tile_px(self.scale);
             ui.draw.ring(middle, tile_px * 0.3, (tile_px * 0.06).max(2.0), GOAL_RING);
         }
+        let above_player = self.camera.to_screen(target - Vec2::new(0.0, HEAD_HEIGHT), self.view, self.scale);
+        self.hud.draw(ui, self.view, &self.sim, &self.item_pictures, above_player);
+
+        // Every frame while something moves; else only when the next
+        // tick is due, if one will change anything; else not at all.
+        if self.sim.player.busy() || following || self.hud.animating(now) {
+            ui.state.request_redraw_after(0.0);
+        } else if self.sim.waiting() {
+            ui.state.request_redraw_after(TICK_SECONDS - self.phase);
+        }
+    }
+
+    /// Turn the player the way they last stepped, or toward what they
+    /// are working at.
+    fn face(&mut self) {
+        let player = &self.sim.player;
+        let toward = match player.activity() {
+            Some(Activity::Working { at, .. }) => (at.0 - player.tile.0, at.1 - player.tile.1),
+            None => (player.tile.0 - player.from.0, player.tile.1 - player.from.1),
+        };
+        self.facing = Facing::of_step(toward.0, toward.1).unwrap_or(self.facing);
     }
 
     /// Editing: the left button works the held tool on the world, and
@@ -196,7 +231,10 @@ impl Game {
             extras.push(Placed { sprite, ground: Vec2::new(x as f64 + 0.5, y as f64 + 0.5), flip, tint: [GHOST; 4] });
         }
         let into = self.phase / TICK_SECONDS;
-        let pose = Pose::at(self.sim.player.moved(), self.sim.player.steps, into);
+        let pose = match self.sim.player.activity() {
+            Some(Activity::Working { .. }) => Pose::working(into),
+            None => Pose::at(self.sim.player.moved(), self.sim.player.steps, into),
+        };
         if let Some((sprite, flip)) = walk.sprite(self.facing, pose) {
             extras.push(Placed { sprite, ground: self.player_ground(), flip, tint: [1.0; 4] });
         }

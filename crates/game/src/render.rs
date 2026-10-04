@@ -242,4 +242,4 @@ fn upload_sheet(gpu: &Gpu, sheet: &Sheet) -> wgpu::Texture {
 
 #[cfg(test)]
 #[path = "render_tests.rs"]
-mod tests;
+pub(crate) mod tests;

@@ -10,12 +10,14 @@ use lntrn_math::{Rect, Vec2};
 use lntrn_render::{Gpu, Images, TexDesc, wgpu};
 use lntrn_ui::keymap::CTX_WINDOW;
 use lntrn_ui::{Action, AreaCx, Axis, Dialog, Host, HostCx, Key, KeyConfig, KeyItem, KeyPress, Modifiers, Shell, ShellRequest, Trigger, Ui};
-use sim::{PropKind, Sim, TICK_SECONDS, World};
+use lntrn_image::Image;
+use sim::{Item, PropKind, Sim, TICK_SECONDS, World};
 
 use crate::anim::Facing;
 use crate::assets::{self, SpriteSet};
 use crate::camera::Camera;
 use crate::editor::MapEditor;
+use crate::hud::{Hud, ItemPictures};
 use crate::panel::{self, Asked, Pictures};
 use crate::render::WorldRenderer;
 use crate::scene::{Look, Scene};
@@ -28,6 +30,8 @@ const EDIT: &str = "editor.toggle";
 const UNDO: &str = "editor.undo";
 const REDO: &str = "editor.redo";
 const SAVE: &str = "editor.save";
+const BAG: &str = "hud.bag";
+const SKILLS: &str = "hud.skills";
 
 /// The map the game plays and the editor edits, inside the assets.
 const MAP: &str = "maps/overworld";
@@ -69,6 +73,10 @@ pub struct Game {
     key_step: Option<f64>,
     keys: KeyConfig,
     fullscreen: bool,
+    hud: Hud,
+    /// The items' pictures: as loaded, and as the interface draws them.
+    item_images: Vec<Option<Image>>,
+    item_pictures: ItemPictures,
     editor: MapEditor,
     pictures: Pictures,
     /// The editor's panel is on screen.
@@ -81,7 +89,11 @@ impl Game {
     pub fn new() -> Game {
         let assets = assets::assets_dir();
         let map = assets.join(MAP);
-        Game::open(&assets, map)
+        let mut game = Game::open(&assets, map);
+        // Different dice every time the game is run.
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
+        game.sim.reseed(now.map_or(0, |since| since.as_nanos() as u64));
+        game
     }
 
     /// The game with its sprites from `dir` and its map in `map`.
@@ -110,6 +122,11 @@ impl Game {
                 (World::new(), Some(e))
             }
         };
+        let item_images = Item::ALL.map(|item| {
+            let path = dir.join(format!("items/{}.png", item.name()));
+            let image = std::fs::read(&path).map_err(|e| e.to_string()).and_then(|bytes| lntrn_image::decode(&bytes).map_err(|e| e.to_string()));
+            image.map_err(|e| log_error!("no picture for {}: {}: {e}", item.label(), path.display())).ok()
+        });
         let sim = Sim::new(world);
         let (x, y) = sim.player.tile;
 
@@ -122,6 +139,8 @@ impl Game {
         bind(Key::Char('z'), Modifiers::CTRL | Modifiers::SHIFT, REDO);
         bind(Key::Char('y'), Modifiers::CTRL, REDO);
         bind(Key::Char('s'), Modifiers::CTRL, SAVE);
+        bind(Key::Char('i'), Modifiers::NONE, BAG);
+        bind(Key::Char('k'), Modifiers::NONE, SKILLS);
         Game {
             sim,
             clock: None,
@@ -140,6 +159,9 @@ impl Game {
             key_step: None,
             keys,
             fullscreen: false,
+            hud: Hud::default(),
+            item_images: item_images.to_vec(),
+            item_pictures: ItemPictures::default(),
             editor: MapEditor::new(),
             pictures: Pictures::default(),
             editing: false,
@@ -246,6 +268,8 @@ impl Host for Game {
                 cx.request(ShellRequest::Fullscreen(self.fullscreen));
             }
             EDIT => self.panel_wanted = Some(!self.editing),
+            BAG if !self.editing => self.hud.bag_open = !self.hud.bag_open,
+            SKILLS if !self.editing => self.hud.skills_open = !self.hud.skills_open,
             UNDO if self.editing => {
                 self.editor.undo(&mut self.sim.world);
             }
@@ -290,6 +314,9 @@ impl AppHost for Game {
         for (slot, kind) in self.pictures.props.iter_mut().zip(PropKind::ALL) {
             *slot = self.look.prop(kind).map(|id| images.add(gpu, self.sprites.picture(id)));
         }
+        for (slot, image) in self.item_pictures.0.iter_mut().zip(&self.item_images) {
+            *slot = image.as_ref().map(|image| images.add(gpu, image));
+        }
     }
 
     fn after_rebuild(&mut self, _: &Gpu, _: &mut Images, shell: &mut Shell<Self>) -> bool {
@@ -306,7 +333,8 @@ impl AppHost for Game {
             return;
         }
         let rect = [view.min.x as u32, view.min.y as u32, view.width() as u32, view.height() as u32];
-        self.scene.build(&self.sim.world, &self.camera, view.size(), self.scale, &self.sprites, &self.look, &extras);
+        let sim = &self.sim;
+        self.scene.build(&sim.world, &self.camera, view.size(), self.scale, &self.sprites, &self.look, &extras, &|x, y| sim.is_spent((x, y)));
         renderer.prepare(cx.gpu, &self.scene, [rect[2], rect[3]]);
 
         // Nothing more changes this frame: the passes only read.

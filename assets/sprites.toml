@@ -18,7 +18,7 @@ file = "sprites/player-01.png"
 cell = [240, 320]
 anchor = [120, 286]
 rows = ["down", "up", "side"]
-columns = ["idle", "step_a", "pass", "step_b"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
 
 [sprites.tree]
 file = "sprites/objects-01.png"
@@ -28,6 +28,11 @@ anchor = [196, 384]
 [sprites.rock]
 file = "sprites/objects-01.png"
 rect = [850, 186, 236, 216]
+anchor = [118, 186]
+
+# A rock that has given all its ore, until it comes back.
+[sprites.rock_spent]
+file = "sprites/rock-depleted.png"
 anchor = [118, 186]
 
 [sprites.herb_purple]

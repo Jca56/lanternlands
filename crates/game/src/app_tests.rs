@@ -3,7 +3,7 @@
 
 use lntrn_ui::testing::Harness;
 use lntrn_ui::{Modifiers, ShellOutput, WidgetId};
-use sim::{Marker, Terrain};
+use sim::{Item, Marker, Skill, Terrain};
 
 use super::*;
 use crate::anim::Pose;
@@ -301,3 +301,6 @@ fn arrows_and_wasd_push_the_same_way_and_opposites_cancel() {
 
 #[path = "app_play_tests.rs"]
 mod play;
+
+#[path = "app_frame_tests.rs"]
+mod frame;

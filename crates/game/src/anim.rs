@@ -35,10 +35,20 @@ pub enum Pose {
     Pass,
     /// The other foot forward.
     StepB,
+    /// Arms drawn back to strike.
+    WorkA,
+    /// The strike.
+    WorkB,
 }
 
 impl Pose {
-    const ALL: [Pose; 4] = [Pose::Idle, Pose::StepA, Pose::Pass, Pose::StepB];
+    const ALL: [Pose; 6] = [Pose::Idle, Pose::StepA, Pose::Pass, Pose::StepB, Pose::WorkA, Pose::WorkB];
+
+    /// The pose `into` a tick for someone at work: every tick is a
+    /// drawing back and then a strike.
+    pub fn working(into: f64) -> Pose {
+        if into >= 0.5 { Pose::WorkB } else { Pose::WorkA }
+    }
 
     /// The pose `into` a tick (0 at its start, 1 at its end) for someone
     /// who has taken `steps` steps and did or did not move this tick. A
@@ -56,12 +66,13 @@ impl Pose {
     }
 }
 
-/// The drawings of a walk: down, up and side by idle, step, pass, step.
+/// Someone's drawings: down, up and side, each idle, walking (step,
+/// pass, step) and at work (drawn back, striking).
 #[derive(Clone, Copy, Debug, Default)]
-pub struct WalkSprites([[Option<SpriteId>; 4]; 3]);
+pub struct WalkSprites([[Option<SpriteId>; 6]; 3]);
 
 const ROWS: [&str; 3] = ["down", "up", "side"];
-const COLUMNS: [&str; 4] = ["idle", "step_a", "pass", "step_b"];
+const COLUMNS: [&str; 6] = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"];
 
 impl WalkSprites {
     /// The sprites called `name_row_column`, as a walk sheet's grid
@@ -115,6 +126,11 @@ mod tests {
     }
 
     #[test]
+    fn a_tick_at_work_is_a_drawing_back_then_a_strike() {
+        assert_eq!((Pose::working(0.0), Pose::working(0.49), Pose::working(0.5), Pose::working(1.0)), (Pose::WorkA, Pose::WorkA, Pose::WorkB, Pose::WorkB));
+    }
+
+    #[test]
     fn the_shipped_sheet_has_every_drawing_and_left_is_right_mirrored() {
         let set = SpriteSet::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets")).expect("assets load");
         let walk = WalkSprites::find(&set, "player");
@@ -130,6 +146,6 @@ mod tests {
             let (right, _) = walk.sprite(Facing::Right, pose).unwrap();
             assert_eq!(walk.sprite(Facing::Left, pose), Some((right, true)));
         }
-        assert_eq!(WalkSprites::find(&set, "nobody").missing("nobody").len(), 12);
+        assert_eq!(WalkSprites::find(&set, "nobody").missing("nobody").len(), 18);
     }
 }
