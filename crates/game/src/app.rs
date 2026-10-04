@@ -6,15 +6,16 @@ use std::path::{Path, PathBuf};
 
 use lntrn_app::{AppHost, RenderCx};
 use lntrn_core::{log_error, log_info};
-use lntrn_math::{Color, Rect, Vec2};
+use lntrn_math::{Rect, Vec2};
 use lntrn_render::{Gpu, Images, TexDesc, wgpu};
 use lntrn_ui::keymap::CTX_WINDOW;
-use lntrn_ui::{Action, AreaCx, Axis, CursorIcon, Dialog, Host, HostCx, Key, KeyConfig, KeyItem, KeyPress, Modifiers, Sense, Shell, ShellRequest, Trigger, Ui};
-use sim::{PropKind, World};
+use lntrn_ui::{Action, AreaCx, Axis, Dialog, Host, HostCx, Key, KeyConfig, KeyItem, KeyPress, Modifiers, Shell, ShellRequest, Trigger, Ui};
+use sim::{PropKind, Sim, TICK_SECONDS, World};
 
+use crate::anim::Facing;
 use crate::assets::{self, SpriteSet};
 use crate::camera::Camera;
-use crate::editor::{MapEditor, Tool};
+use crate::editor::MapEditor;
 use crate::panel::{self, Asked, Pictures};
 use crate::render::WorldRenderer;
 use crate::scene::{Look, Scene};
@@ -31,16 +32,8 @@ const SAVE: &str = "editor.save";
 /// The map the game plays and the editor edits, inside the assets.
 const MAP: &str = "maps/overworld";
 
-/// How much one notch of the wheel zooms.
-const ZOOM_PER_NOTCH: f64 = 1.15;
-/// How fast the keys move the view, in logical pixels a second.
-const KEY_PAN_SPEED: f64 = 1000.0;
-/// The longest step the keys take at once, however long the last frame
-/// took.
-const LONGEST_STEP: f64 = 0.1;
 /// How wide the editor's panel opens, in logical pixels.
 const PANEL_WIDTH: f64 = 400.0;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
     World,
@@ -48,7 +41,14 @@ pub enum View {
 }
 
 pub struct Game {
-    world: World,
+    sim: Sim,
+    /// When the last frame was, to know how long this one took.
+    clock: Option<f64>,
+    /// Seconds into the tick under way. Parked at a whole tick while
+    /// nothing is happening, so the first thing that does starts at once.
+    phase: f64,
+    /// The way the player last stepped.
+    facing: Facing,
     /// Where the map is saved.
     map: PathBuf,
     /// Why the map did not load, until it has been said.
@@ -110,7 +110,8 @@ impl Game {
                 (World::new(), Some(e))
             }
         };
-        let middle = world.bounds().map_or(Vec2::ZERO, |[x0, y0, x1, y1]| Vec2::new((x0 + x1) as f64, (y0 + y1) as f64) * 0.5);
+        let sim = Sim::new(world);
+        let (x, y) = sim.player.tile;
 
         let mut keys = KeyConfig::default();
         let mut bind = |key, mods, action: &str| keys.bind(CTX_WINDOW, KeyItem::new(Trigger::key(key, mods), action));
@@ -122,10 +123,13 @@ impl Game {
         bind(Key::Char('y'), Modifiers::CTRL, REDO);
         bind(Key::Char('s'), Modifiers::CTRL, SAVE);
         Game {
-            world,
+            sim,
+            clock: None,
+            phase: TICK_SECONDS,
+            facing: Facing::default(),
             map,
             load_error,
-            camera: Camera::new(middle),
+            camera: Camera::new(Vec2::new(x as f64 + 0.5, y as f64 + 0.5)),
             look,
             sprites,
             scene: Scene::default(),
@@ -143,108 +147,9 @@ impl Game {
         }
     }
 
-    /// Which way the held keys push the view: arrows or WASD.
-    fn key_push(held: &[Key]) -> Vec2 {
-        let is = |key: &Key, arrow: Key, letter: char| *key == arrow || matches!(key, Key::Char(c) if c.eq_ignore_ascii_case(&letter));
-        let mut push = Vec2::ZERO;
-        for key in held {
-            if is(key, Key::ArrowLeft, 'a') {
-                push.x -= 1.0;
-            } else if is(key, Key::ArrowRight, 'd') {
-                push.x += 1.0;
-            } else if is(key, Key::ArrowUp, 'w') {
-                push.y -= 1.0;
-            } else if is(key, Key::ArrowDown, 's') {
-                push.y += 1.0;
-            }
-        }
-        push
-    }
-
-    /// Move the view by what the wheel, the middle button and the keys
-    /// did. `over` is whether the pointer is on the world.
-    fn steer(&mut self, ui: &mut Ui, over: bool) {
-        let notches = ui.state.wheel.y / ui.m.widget_h;
-        if over && notches != 0.0 {
-            self.camera.zoom_about(ZOOM_PER_NOTCH.powf(notches), ui.state.pointer, self.view, self.scale);
-            ui.state.wheel = Vec2::ZERO;
-        }
-
-        self.dragging = ui.state.middle_down && (self.dragging || (over && ui.state.middle_pressed));
-        if self.dragging {
-            self.camera.pan_px(ui.state.delta, self.scale);
-        }
-
-        // With Ctrl or Alt held the keys mean something else.
-        let free = !ui.state.mods.ctrl() && !ui.state.mods.alt();
-        let push = if free { Self::key_push(&ui.state.keys_down) } else { Vec2::ZERO };
-        if push == Vec2::ZERO {
-            self.key_step = None;
-        } else {
-            let now = ui.now();
-            let dt = self.key_step.map_or(0.0, |last| (now - last).clamp(0.0, LONGEST_STEP));
-            self.camera.pan_px(-push * KEY_PAN_SPEED * self.scale * dt, self.scale);
-            self.key_step = Some(now);
-            ui.state.request_redraw_after(0.0);
-        }
-
-        // The view may leave the map by a screen or so, to paint new
-        // ground past its edge, but not wander off for good.
-        if let Some([x0, y0, x1, y1]) = self.world.bounds() {
-            let slack = self.camera.visible(self.view.size(), self.scale).size() * 0.5;
-            self.camera.clamp_to(Rect::new(Vec2::new(x0 as f64, y0 as f64) - slack, Vec2::new(x1 as f64, y1 as f64) + slack));
-        }
-    }
-
-    /// The world's area: steer the view and, while editing, work the
-    /// held tool with the left button and show where it would land.
-    fn draw_world(&mut self, ui: &mut Ui, cx: &mut AreaCx<()>) {
-        self.view = ui.clip();
-        self.scale = ui.m.scale;
-        if let Some(why) = self.load_error.take() {
-            cx.request(ShellRequest::Dialog(Dialog::notice("The map did not load", &why)));
-        }
-        let hand = ui.interact(ui.id("world"), self.view, Sense::DRAG);
-        self.steer(ui, hand.hovered);
-        if !self.editing {
-            self.editor.release();
-            return;
-        }
-
-        let at = self.camera.to_world(ui.state.pointer, self.view, self.scale);
-        if hand.pressed {
-            self.editor.press(&mut self.world, at);
-        } else if hand.dragging {
-            self.editor.drag(&mut self.world, at);
-        }
-        if !hand.held {
-            self.editor.release();
-        }
-        if hand.hovered || hand.held {
-            if self.editor.tool == Tool::Move {
-                // A hand over what can be picked up, a closed one carrying it.
-                if self.editor.carrying().is_some() {
-                    ui.state.cursor_icon = CursorIcon::Grabbing;
-                } else if self.world.prop_at(at.x.floor() as i32, at.y.floor() as i32).is_some() {
-                    ui.state.cursor_icon = CursorIcon::Pointer;
-                }
-            }
-            // A carried prop is lit where it stands: under the pointer,
-            // unless it cannot stand there.
-            let lit = self.editor.carrying().map_or_else(|| self.editor.footprint(at), |tile| vec![tile]);
-            let (fill, line) = (Color::rgba(1.0, 1.0, 1.0, 0.25), Color::rgba(1.0, 1.0, 1.0, 0.7));
-            for (x, y) in lit {
-                let corner = |x: i32, y: i32| self.camera.to_screen(Vec2::new(x as f64, y as f64), self.view, self.scale);
-                let tile = Rect::new(corner(x, y), corner(x + 1, y + 1)).round();
-                ui.draw.rect(tile, fill);
-                ui.draw.stroke_rect(tile, ui.m.border, 0.0, line);
-            }
-        }
-    }
-
     fn save(&mut self, cx: &mut HostCx) -> bool {
         self.editor.release();
-        match self.world.save(&self.map) {
+        match self.sim.world.save(&self.map) {
             Ok(_) => {
                 cx.toast("Map saved");
                 true
@@ -272,7 +177,12 @@ impl Game {
             (Some(false), Some(panel), _) => shell.screen.join(panel),
             _ => false,
         };
-        self.editing = shell.screen.target(View::Editor).is_some();
+        let was_editing = std::mem::replace(&mut self.editing, shell.screen.target(View::Editor).is_some());
+        if was_editing && !self.editing {
+            // Back to the game: on ground that may have changed under them.
+            self.sim.settle_player();
+            self.phase = TICK_SECONDS;
+        }
         changed
     }
 
@@ -313,12 +223,12 @@ impl Host for Game {
     fn draw_body(&mut self, view: View, ui: &mut Ui, cx: &mut AreaCx<()>) -> bool {
         match view {
             View::World => self.draw_world(ui, cx),
-            View::Editor => match panel::draw(ui, &mut self.editor, self.world.is_dirty(), &self.pictures) {
+            View::Editor => match panel::draw(ui, &mut self.editor, self.sim.world.is_dirty(), &self.pictures) {
                 Some(Asked::Undo) => {
-                    self.editor.undo(&mut self.world);
+                    self.editor.undo(&mut self.sim.world);
                 }
                 Some(Asked::Redo) => {
-                    self.editor.redo(&mut self.world);
+                    self.editor.redo(&mut self.sim.world);
                 }
                 Some(Asked::Save) => {
                     self.save(&mut cx.host());
@@ -337,15 +247,15 @@ impl Host for Game {
             }
             EDIT => self.panel_wanted = Some(!self.editing),
             UNDO if self.editing => {
-                self.editor.undo(&mut self.world);
+                self.editor.undo(&mut self.sim.world);
             }
             REDO if self.editing => {
-                self.editor.redo(&mut self.world);
+                self.editor.redo(&mut self.sim.world);
             }
             SAVE if self.editing => {
                 self.save(cx);
             }
-            QUIT if self.world.is_dirty() => self.ask_before_quitting(cx),
+            QUIT if self.sim.world.is_dirty() => self.ask_before_quitting(cx),
             QUIT | QUIT_UNSAVED => cx.quit(),
             QUIT_SAVED => {
                 let saved = self.save(cx);
@@ -367,10 +277,10 @@ impl Host for Game {
     }
 
     fn close_requested(&mut self, _: bool, cx: &mut HostCx) -> bool {
-        if self.world.is_dirty() {
+        if self.sim.world.is_dirty() {
             self.ask_before_quitting(cx);
         }
-        !self.world.is_dirty()
+        !self.sim.world.is_dirty()
     }
 }
 
@@ -387,6 +297,7 @@ impl AppHost for Game {
     }
 
     fn render<'f>(&'f mut self, cx: &mut RenderCx<'f, '_>) {
+        let extras = self.extras();
         let Some(renderer) = self.renderer.as_mut().filter(|_| cx.window == 0) else { return };
         // The world's area, in whole pixels inside the window.
         let window = Rect::new(Vec2::ZERO, Vec2::new(cx.size[0] as f64, cx.size[1] as f64));
@@ -395,7 +306,7 @@ impl AppHost for Game {
             return;
         }
         let rect = [view.min.x as u32, view.min.y as u32, view.width() as u32, view.height() as u32];
-        self.scene.build(&self.world, &self.camera, view.size(), self.scale, &self.sprites, &self.look);
+        self.scene.build(&self.sim.world, &self.camera, view.size(), self.scale, &self.sprites, &self.look, &extras);
         renderer.prepare(cx.gpu, &self.scene, [rect[2], rect[3]]);
 
         // Nothing more changes this frame: the passes only read.
@@ -406,6 +317,9 @@ impl AppHost for Game {
         cx.graph.add_node("world to window", &[picture], &[backbuffer], move |gpu, encoder, views| renderer.composite(gpu, encoder, views.get(picture), views.get(backbuffer), rect));
     }
 }
+
+#[path = "app_view.rs"]
+mod view;
 
 #[cfg(test)]
 #[path = "app_tests.rs"]

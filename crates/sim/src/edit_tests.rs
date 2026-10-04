@@ -80,12 +80,12 @@ fn painting_keeps_what_stands_and_erasing_takes_it() {
     world.place_prop(PropKind::Tree, 5, 5);
     let mut history = History::new();
     paint(&mut history, &mut world, (5.5, 5.5), 3, Some(Sand));
-    assert_eq!(world.tile(5, 5), Tile { terrain: Some(Sand), prop: Some(PropKind::Tree) });
+    assert_eq!(world.tile(5, 5), Tile { terrain: Some(Sand), prop: Some(PropKind::Tree), marker: None });
     paint(&mut history, &mut world, (5.5, 5.5), 1, None);
     assert_eq!(world.tile(5, 5), Tile::default());
     // Undo brings the tree back with its ground.
     history.undo(&mut world);
-    assert_eq!(world.tile(5, 5), Tile { terrain: Some(Grass), prop: Some(PropKind::Tree) });
+    assert_eq!(world.tile(5, 5), Tile { terrain: Some(Grass), prop: Some(PropKind::Tree), marker: None });
 }
 
 #[test]
@@ -275,4 +275,43 @@ fn undo_in_the_middle_of_a_stroke_takes_the_stroke_so_far() {
     paint(&mut history, &mut world, (2.5, 2.5), 3, Some(Dirt));
     assert!(history.undo(&mut world));
     assert_eq!(snapshot(&world), before);
+}
+
+#[test]
+fn setting_the_start_moves_it_and_undo_puts_it_back_where_it_was() {
+    let mut world = field();
+    let mut history = History::new();
+    history.begin();
+    assert!(set_marker(&mut history, &mut world, Marker::PlayerStart, 2, 2));
+    history.commit();
+    history.begin();
+    assert!(set_marker(&mut history, &mut world, Marker::PlayerStart, 7, 5));
+    assert!(!set_marker(&mut history, &mut world, Marker::PlayerStart, -4, -4), "no ground there");
+    history.commit();
+    assert_eq!(world.marker(Marker::PlayerStart), Some((7, 5)));
+    assert_eq!(world.marker_at(2, 2), None);
+
+    history.undo(&mut world);
+    assert_eq!(world.marker(Marker::PlayerStart), Some((2, 2)));
+    history.undo(&mut world);
+    assert_eq!(world.marker(Marker::PlayerStart), None);
+    history.redo(&mut world);
+    history.redo(&mut world);
+    assert_eq!(world.marker(Marker::PlayerStart), Some((7, 5)));
+}
+
+#[test]
+fn the_tools_leave_a_marker_where_it_is_and_the_eraser_takes_it() {
+    let mut world = field();
+    let mut history = History::new();
+    set_marker(&mut history, &mut world, Marker::PlayerStart, 4, 4);
+    paint(&mut history, &mut world, (4.5, 4.5), 3, Some(Sand));
+    place(&mut history, &mut world, 4, 4, PropKind::HerbCyan);
+    fill(&mut history, &mut world, 4, 4, Dirt);
+    remove(&mut history, &mut world, 4, 4);
+    assert_eq!(world.tile(4, 4), Tile { terrain: Some(Dirt), prop: None, marker: Some(Marker::PlayerStart) });
+    paint(&mut history, &mut world, (4.5, 4.5), 1, None);
+    assert_eq!(world.marker(Marker::PlayerStart), None);
+    history.undo(&mut world);
+    assert_eq!(world.marker(Marker::PlayerStart), None, "the whole run was one step");
 }

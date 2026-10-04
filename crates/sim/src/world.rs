@@ -40,6 +40,33 @@ impl PropKind {
     pub fn from_name(name: &str) -> Option<PropKind> {
         PropKind::ALL.into_iter().find(|k| k.name() == name)
     }
+
+    /// Whether it is in the way of someone walking.
+    pub const fn blocks(self) -> bool {
+        matches!(self, PropKind::Tree | PropKind::Rock)
+    }
+}
+
+/// A place the map marks out. There is at most one of each in a world.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Marker {
+    /// Where the player appears.
+    PlayerStart,
+}
+
+impl Marker {
+    pub const ALL: [Marker; 1] = [Marker::PlayerStart];
+
+    /// What it is called in a map file. Never change one.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Marker::PlayerStart => "player_start",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Marker> {
+        Marker::ALL.into_iter().find(|m| m.name() == name)
+    }
 }
 
 /// Something standing on a tile.
@@ -50,28 +77,31 @@ pub struct Prop {
     pub y: i32,
 }
 
-/// Everything about one tile: its ground, and what stands on it. No
-/// ground means nothing stands there either.
+/// Everything about one tile: its ground, what stands on it, and what
+/// the map marks there. No ground means none of the rest either.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Tile {
     pub terrain: Option<Terrain>,
     pub prop: Option<PropKind>,
+    pub marker: Option<Marker>,
 }
 
 pub(crate) struct Chunk {
     /// A terrain's rank per tile, row by row, or [`VOID`].
     pub(crate) tiles: Box<[u8; AREA]>,
     pub(crate) props: Vec<Prop>,
+    /// Each marker in this chunk, with its tile.
+    pub(crate) markers: Vec<(Marker, i32, i32)>,
 }
 
 impl Chunk {
     pub(crate) fn new() -> Chunk {
-        Chunk { tiles: Box::new([VOID; AREA]), props: Vec::new() }
+        Chunk { tiles: Box::new([VOID; AREA]), props: Vec::new(), markers: Vec::new() }
     }
 
     /// No ground anywhere and nothing standing: not worth keeping.
     pub(crate) fn is_empty(&self) -> bool {
-        self.props.is_empty() && self.tiles.iter().all(|&t| t == VOID)
+        self.props.is_empty() && self.markers.is_empty() && self.tiles.iter().all(|&t| t == VOID)
     }
 }
 
@@ -117,6 +147,7 @@ impl World {
         if let Some(chunk) = self.chunks.get_mut(&key) {
             chunk.tiles[index] = VOID;
             chunk.props.retain(|p| (p.x, p.y) != (x, y));
+            chunk.markers.retain(|&(_, mx, my)| (mx, my) != (x, y));
             self.dirty.insert(key);
         }
     }
@@ -146,13 +177,62 @@ impl World {
         Some(props.swap_remove(at))
     }
 
-    /// Everything about a tile at once.
-    pub fn tile(&self, x: i32, y: i32) -> Tile {
-        Tile { terrain: self.terrain(x, y), prop: self.prop_at(x, y).map(|p| p.kind) }
+    /// Where a marker is, if the map has it.
+    pub fn marker(&self, marker: Marker) -> Option<(i32, i32)> {
+        self.chunks.values().flat_map(|chunk| &chunk.markers).find(|(m, _, _)| *m == marker).map(|&(_, x, y)| (x, y))
     }
 
-    /// Make a tile exactly `tile`. With no ground, nothing stands on it,
-    /// whatever `tile.prop` says.
+    /// What the map marks on a tile.
+    pub fn marker_at(&self, x: i32, y: i32) -> Option<Marker> {
+        let (key, _) = locate(x, y);
+        self.chunks.get(&key)?.markers.iter().find(|&&(_, mx, my)| (mx, my) == (x, y)).map(|&(m, _, _)| m)
+    }
+
+    /// Put a marker on a tile, taking it from wherever it was (and
+    /// taking away any other marker on that tile). `false`, and nothing
+    /// changes, when the tile has no ground.
+    pub fn set_marker(&mut self, marker: Marker, x: i32, y: i32) -> bool {
+        if self.terrain(x, y).is_none() {
+            return false;
+        }
+        self.take_marker(marker);
+        self.clear_marker(x, y);
+        let (key, _) = locate(x, y);
+        self.chunks.get_mut(&key).expect("the tile has ground").markers.push((marker, x, y));
+        self.dirty.insert(key);
+        true
+    }
+
+    /// Take a marker off the map, wherever it is.
+    pub fn take_marker(&mut self, marker: Marker) {
+        if let Some((x, y)) = self.marker(marker) {
+            self.clear_marker(x, y);
+        }
+    }
+
+    /// Take away whatever the map marks on a tile.
+    pub fn clear_marker(&mut self, x: i32, y: i32) {
+        let (key, _) = locate(x, y);
+        if let Some(chunk) = self.chunks.get_mut(&key).filter(|c| c.markers.iter().any(|&(_, mx, my)| (mx, my) == (x, y))) {
+            chunk.markers.retain(|&(_, mx, my)| (mx, my) != (x, y));
+            self.dirty.insert(key);
+        }
+    }
+
+    /// Whether someone can stand on a tile: ground that can be walked
+    /// on, with nothing in the way.
+    pub fn walkable(&self, x: i32, y: i32) -> bool {
+        self.terrain(x, y).is_some_and(Terrain::walkable) && !self.prop_at(x, y).is_some_and(|p| p.kind.blocks())
+    }
+
+    /// Everything about a tile at once.
+    pub fn tile(&self, x: i32, y: i32) -> Tile {
+        Tile { terrain: self.terrain(x, y), prop: self.prop_at(x, y).map(|p| p.kind), marker: self.marker_at(x, y) }
+    }
+
+    /// Make a tile exactly `tile`. With no ground, nothing stands on it
+    /// and nothing is marked there, whatever the rest of `tile` says. A
+    /// marker put here is taken from wherever else it was.
     pub fn set_tile(&mut self, x: i32, y: i32, tile: Tile) {
         let Some(terrain) = tile.terrain else {
             return self.clear_tile(x, y);
@@ -162,6 +242,14 @@ impl World {
             self.remove_prop(x, y);
             if let Some(kind) = tile.prop {
                 self.place_prop(kind, x, y);
+            }
+        }
+        if self.marker_at(x, y) != tile.marker {
+            match tile.marker {
+                Some(marker) => {
+                    self.set_marker(marker, x, y);
+                }
+                None => self.clear_marker(x, y),
             }
         }
     }
@@ -264,16 +352,17 @@ mod tests {
     #[test]
     fn set_tile_makes_the_tile_exactly_what_was_asked() {
         let mut world = World::new();
-        let tree_on_grass = Tile { terrain: Some(Terrain::Grass), prop: Some(PropKind::Tree) };
+        let tree_on_grass = Tile { terrain: Some(Terrain::Grass), prop: Some(PropKind::Tree), marker: None };
         world.set_tile(2, 2, tree_on_grass);
         assert_eq!(world.tile(2, 2), tree_on_grass);
         // New ground under the same prop, then another prop, then none.
-        for tile in [Tile { terrain: Some(Terrain::Sand), prop: Some(PropKind::Tree) }, Tile { terrain: Some(Terrain::Sand), prop: Some(PropKind::Rock) }, Tile { terrain: Some(Terrain::Sand), prop: None }] {
+        for prop in [Some(PropKind::Tree), Some(PropKind::Rock), None] {
+            let tile = Tile { terrain: Some(Terrain::Sand), prop, marker: None };
             world.set_tile(2, 2, tile);
             assert_eq!(world.tile(2, 2), tile);
         }
         // No ground: nothing can stand there.
-        world.set_tile(2, 2, Tile { terrain: None, prop: Some(PropKind::Tree) });
+        world.set_tile(2, 2, Tile { terrain: None, prop: Some(PropKind::Tree), marker: Some(Marker::PlayerStart) });
         assert_eq!(world.tile(2, 2), Tile::default());
     }
 
@@ -299,6 +388,53 @@ mod tests {
             world.dirty.clear();
             change(&mut world);
             assert!(world.is_dirty());
+        }
+    }
+
+    #[test]
+    fn a_marker_is_in_one_place_at_a_time_and_only_on_ground() {
+        let mut world = World::new();
+        assert!(!world.set_marker(Marker::PlayerStart, 3, 3), "no ground");
+        world.set_terrain(3, 3, Terrain::Grass);
+        world.set_terrain(50, -7, Terrain::Grass);
+        assert!(world.set_marker(Marker::PlayerStart, 3, 3));
+        assert_eq!(world.marker(Marker::PlayerStart), Some((3, 3)));
+        assert_eq!(world.marker_at(3, 3), Some(Marker::PlayerStart));
+        // Put elsewhere (another chunk), it leaves where it was.
+        assert!(world.set_marker(Marker::PlayerStart, 50, -7));
+        assert_eq!(world.marker(Marker::PlayerStart), Some((50, -7)));
+        assert_eq!(world.marker_at(3, 3), None);
+        // It goes with its ground.
+        world.clear_tile(50, -7);
+        assert_eq!(world.marker(Marker::PlayerStart), None);
+    }
+
+    #[test]
+    fn set_tile_carries_the_marker_too() {
+        let mut world = World::new();
+        world.set_terrain(1, 1, Terrain::Grass);
+        let marked = Tile { terrain: Some(Terrain::Dirt), prop: None, marker: Some(Marker::PlayerStart) };
+        world.set_tile(8, 8, marked);
+        assert_eq!(world.tile(8, 8), marked);
+        world.set_tile(1, 1, Tile { terrain: Some(Terrain::Grass), prop: None, marker: Some(Marker::PlayerStart) });
+        assert_eq!(world.tile(8, 8).marker, None, "the marker moved");
+        world.set_tile(1, 1, Tile { terrain: Some(Terrain::Grass), prop: None, marker: None });
+        assert_eq!(world.marker(Marker::PlayerStart), None);
+    }
+
+    #[test]
+    fn water_trees_rocks_and_the_void_cannot_be_walked_on() {
+        let mut world = World::new();
+        for (x, terrain) in [(0, Terrain::Grass), (1, Terrain::Dirt), (2, Terrain::Sand), (3, Terrain::Water)] {
+            world.set_terrain(x, 0, terrain);
+        }
+        assert!(world.walkable(0, 0) && world.walkable(1, 0) && world.walkable(2, 0));
+        assert!(!world.walkable(3, 0), "water");
+        assert!(!world.walkable(4, 0), "void");
+        for (kind, blocks) in [(PropKind::Tree, true), (PropKind::Rock, true), (PropKind::HerbPurple, false), (PropKind::HerbCyan, false)] {
+            world.remove_prop(0, 0);
+            world.place_prop(kind, 0, 0);
+            assert_eq!(world.walkable(0, 0), !blocks, "{kind:?}");
         }
     }
 

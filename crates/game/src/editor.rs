@@ -4,7 +4,7 @@
 
 use lntrn_math::Vec2;
 use sim::edit::{self, History};
-use sim::{PropKind, Terrain, World};
+use sim::{Marker, PropKind, Terrain, World};
 
 /// The widest the brush goes, in tiles.
 pub const SIZE_MAX: u32 = 9;
@@ -23,10 +23,12 @@ pub enum Tool {
     Remove,
     /// Pick a prop up and set it down on another tile.
     Move,
+    /// Say where the player appears.
+    Start,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 6] = [Tool::Brush, Tool::Eraser, Tool::Fill, Tool::Place, Tool::Remove, Tool::Move];
+    pub const ALL: [Tool; 7] = [Tool::Brush, Tool::Eraser, Tool::Fill, Tool::Place, Tool::Remove, Tool::Move, Tool::Start];
 
     pub const fn label(self) -> &'static str {
         match self {
@@ -36,6 +38,7 @@ impl Tool {
             Tool::Place => "Place",
             Tool::Remove => "Remove",
             Tool::Move => "Move",
+            Tool::Start => "Start",
         }
     }
 
@@ -142,6 +145,9 @@ impl MapEditor {
             }
             Tool::Remove => {
                 edit::remove(&mut self.history, world, x, y);
+            }
+            Tool::Start => {
+                edit::set_marker(&mut self.history, world, Marker::PlayerStart, x, y);
             }
             // The carried prop follows the pointer onto any tile it can
             // stand on, and waits on its last one over those it can't.
@@ -329,6 +335,23 @@ mod tests {
         editor.drag(&mut world, Vec2::new(4.5, 4.5));
         editor.release();
         assert!(!editor.history.can_undo());
+    }
+
+    #[test]
+    fn the_start_tool_puts_the_players_start_under_the_pointer() {
+        let (mut world, mut editor) = (field(), MapEditor::new());
+        editor.tool = Tool::Start;
+        editor.press(&mut world, Vec2::new(3.5, 4.5));
+        editor.release();
+        assert_eq!(world.marker(Marker::PlayerStart), Some((3, 4)));
+        // Dragged, it follows; off the ground, it stays on the last good tile.
+        editor.press(&mut world, Vec2::new(6.5, 6.5));
+        editor.drag(&mut world, Vec2::new(7.5, 6.5));
+        editor.drag(&mut world, Vec2::new(-2.5, 6.5));
+        editor.release();
+        assert_eq!(world.marker(Marker::PlayerStart), Some((7, 6)));
+        editor.undo(&mut world);
+        assert_eq!(world.marker(Marker::PlayerStart), Some((3, 4)));
     }
 
     #[test]

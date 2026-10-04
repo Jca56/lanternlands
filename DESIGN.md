@@ -2,7 +2,7 @@
 
 Working title (from the folder name). Claude's design doc; Alva's scratchpad is `Notes.md` (read-only for Claude, git-ignored).
 
-Status: design agreed for the core; milestone 1 (window, tile renderer, camera) is done and milestone 2 (map editor) is built.
+Status: design agreed for the core; milestones 1 (window, tile renderer, camera) and 2 (map editor) are done, and milestone 3 (ticks and walking) is built.
 
 ## Pitch
 
@@ -23,7 +23,7 @@ Locked with Alva on 2026-10-04.
 |---|---|
 | Players | Single player only |
 | Stack | Rust + wgpu + Lantern UI 2 (path dependency, not modified without asking) |
-| Movement | Click-to-move on a tile grid, pathfinding, one step per tick |
+| Movement | Click-to-move on a tile grid, pathfinding, one step per 0.4 s tick, eight directions with no corner cutting |
 | Camera | 3/4 top-down (fronts of trees, buildings, characters visible) |
 | Art | Bold flat shapes: thick dark outlines, flat colours, big readable silhouettes. Drawn in Lantern Studio 3. Palette: B Earthy (see Art) |
 | World building | In-game map editor (toggle-able mode), our own map file format |
@@ -63,7 +63,7 @@ Later candidates: Cooking (buff food), Fishing, Crafting (leather / jewellery), 
 
 ## System sketches (proposals)
 
-- **Tick.** One constant for tick length (start at RuneScape's 0.6 s, tune by feel once it is playable). The simulation only advances on ticks; rendering interpolates between them so movement looks smooth.
+- **Tick.** One constant for tick length: 0.4 s, chosen by Alva over RuneScape's 0.6 s. The simulation only advances on ticks; rendering interpolates between them so movement looks smooth.
 - **World.** Tile grid stored in chunks. Layers: terrain, objects (rocks, herbs, buildings, scenery), collision, spawns. Trees exist as scenery, not as a skill.
 - **Interaction.** Click a thing: path to a tile next to it, then act (mine, pick, attack, talk).
 - **Combat.** Each weapon has an attack speed in ticks. Accuracy roll, then damage roll. Abilities have cooldowns in ticks; spells also cost mana. Triangle: melee beats ranged, ranged beats magic, magic beats melee.
@@ -108,9 +108,9 @@ Muted, warm, old-school. In the test sheet B is the A panel pushed through two a
 
 ## How it is built
 
-Milestones 1 and 2, as of 2026-10-04.
+Milestones 1 to 3, as of 2026-10-04.
 
-- **Layout.** A Cargo workspace: `crates/sim` (pure std: terrain, the chunked world, props, the edit tools and their history, map files, a test map) and `crates/game` (the binary `explore-the-world`: camera, sprite sheet packer, scene builder, the wgpu passes, the map editor and its panel, the Lantern UI 2 host). Art sources in `art/`, what the game loads in `assets/`.
+- **Layout.** A Cargo workspace: `crates/sim` (pure std: terrain, the chunked world, props and markers, pathfinding, the ticking player, the edit tools and their history, map files, a test map) and `crates/game` (the binary `explore-the-world`: camera, sprite sheet packer, scene builder, the wgpu passes, the map editor and its panel, the Lantern UI 2 host). Art sources in `art/`, what the game loads in `assets/`.
 - **Window.** Lantern UI 2 by path, unmodified. One area with no header and no title bar; the world fills it and the interface will draw over it.
 - **World pass.** The world is drawn into a picture of its own that holds the art's sRGB numbers and blends them as they are, the way Lantern Studio composites, then that picture is put on the window. Blending in linear light instead made shadows visibly paler than the approved art.
 - **Ground.** Drawn on the dual grid: one quad per square between four tile centres. Kinds stack grass < dirt < sand < water; a layer covers its own tiles and those of every kind above it, so no gap opens where two meet. The shader shapes each quad from which corners it covers, with corners rounded to half a tile and a rim just inside the edge. There is no transition art.
@@ -118,9 +118,13 @@ Milestones 1 and 2, as of 2026-10-04.
 - **Decoration.** Grass tufts are scattered by a hash of the tile, on about one bare grass tile in five. They are not world data.
 - **The map.** `assets/maps/overworld/` is the real map: the game loads it and the editor saves to it. It started as `sim::testmap`, a made-up 48 x 32 map, written out once (Alva's choice); that generator stays for the tests.
 - **Map files.** One compact binary file per 32 x 32 chunk (Alva's choice), named for the chunk (`-1_0.chunk`), about 500 bytes each for the test map. Versioned, in tagged sections so layers can be added. Ground and props are stored by name, not number, so kinds can be added or reordered without breaking saved maps; an unknown name is an error, never a silent hole. Only changed chunks are written, each whole and then moved into place; a chunk erased to nothing loses its file.
-- **Map editor.** F2 docks a panel on the left (a real Lantern UI 2 area, so its edge drags): undo, redo, save; the tools (brush, eraser, fill, place, remove, move); the brush's width, 1 to 9 tiles; the grounds; the props with their pictures. The left button works the held tool on the world, with the tiles it would touch lit under the pointer. A whole stroke is one undo step, 500 steps deep. Quitting with unsaved changes asks first.
-- **Controls for now.** Wheel zooms about the pointer, middle-drag or arrows / WASD move the view, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
-- **How it is checked.** 120 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map.
+- **Map editor.** F2 docks a panel on the left (a real Lantern UI 2 area, so its edge drags): undo, redo, save; the tools (brush, eraser, fill, place, remove, move, start); the brush's width, 1 to 9 tiles; the grounds; the props with their pictures. The left button works the held tool on the world, with the tiles it would touch lit under the pointer. A whole stroke is one undo step, 500 steps deep. Quitting with unsaved changes asks first.
+- **Ticks and walking.** A tick is 0.4 s and a step takes one tick (Alva's choice). Steps go eight ways; a diagonal one needs both tiles beside it free, so no corner is cut. Water, the void, trees and rocks cannot be stood on; herbs can. A click finds the shortest way (A*, diagonal first then straight) and the player follows it a tile a tick, finding a new way if something gets in it. Clicking where they cannot stand walks them to the tile right beside it. The simulation knows only tiles and ticks; the game slides the sprite between tiles over the tick.
+- **The player's sprite.** `assets/sprites/player-01.png` (source in `art/sprites/`): three drawn facings (down, up, side; left is the side mirrored), each with an idle pose and a walk of stride, pass, other stride. A tile's step is a stride then a pass, and strides take turns. A diagonal step shows the side view. The manifest's `[grids.name]` table cuts such a sheet into sprites.
+- **The view while playing.** Always on the player, gliding after them; the wheel still zooms. Nothing redraws while the player and the view are at rest.
+- **Player start.** A marker in the map (the editor's Start tool; a see-through player shows it while editing), saved in its chunk's file. With none, the player starts on the nearest standable tile to the map's middle.
+- **Controls for now.** Click to walk. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
+- **How it is checked.** 162 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `EXPLORE_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map.
 
 ### Calls Claude made, Alva's to overrule
 
@@ -138,12 +142,16 @@ Milestones 1 and 2, as of 2026-10-04.
 12. Picking a ground takes up the brush (or keeps the fill if that is held); picking a prop takes up the place tool.
 13. While editing, the view may leave the map by half a screen, to paint new ground past its edge.
 14. The move tool carries the prop under the pointer tile by tile: it follows onto any tile it can stand on (ground, nothing there already) and waits on its last good tile over those it cannot. It never replaces another prop.
-15. Props are still the four placeholder kinds. They become data-defined objects when they start to do things (mining, picking).
+15. The player is drawn without the sword: weapons come back as equipment drawn over the body, not baked into every frame.
+16. The first step after standing still starts at once instead of waiting for the next tick to come round. Nothing else ticks yet; when monsters do, whether a click waits for the tick is a feel question to revisit.
+17. The game stands still while the editor is open. Closing it stops the player and moves them off any ground that can no longer be stood on.
+18. While playing the view cannot be moved off the player.
+19. Where the player is is not saved yet: every launch starts at the start.
+20. Props are still the four placeholder kinds. They become data-defined objects when they start to do things (mining, picking).
 
 ## Open questions
 
 - Inventory size, bank size
-- Travel speed in tiles per tick
 - Level cap and XP curve
 - Quests and NPC dialogue: when, and how deep
 - Where assets live for a deployed binary (it finds them beside itself, else in the source tree)
@@ -156,8 +164,8 @@ Milestones 1 and 2, as of 2026-10-04.
 
 0. Art style test sheet (terrain, ore rock, herb, player, goblin) to lock the look, tile size, and palette. **Done 2026-10-04**: style approved, palette B Earthy
 1. Window, tile renderer, camera. **Done 2026-10-04**: Alva ran it ("It looks beautiful!")
-2. Map editor: paint, place, save, load. **Built 2026-10-04**, awaiting Alva's look
-3. Tick simulation, click-to-move pathfinding
+2. Map editor: paint, place, save, load. **Done 2026-10-04**: Alva used it ("that's so cool!"), asked for a move tool, and that "works great"
+3. Tick simulation, click-to-move pathfinding. **Built 2026-10-04** with full walk cycles, awaiting Alva's look
 4. Inventory, skills and XP, Mining nodes
 5. Combat: melee auto-attack, abilities, monsters, drops, death
 6. Smithing and equipment

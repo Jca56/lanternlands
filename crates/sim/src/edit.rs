@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::terrain::Terrain;
-use crate::world::{PropKind, Tile, World};
+use crate::world::{Marker, PropKind, Tile, World};
 
 /// How many steps back the history goes.
 pub const HISTORY_LIMIT: usize = 500;
@@ -153,7 +153,7 @@ pub fn brush(center: (f64, f64), size: u32) -> Vec<(i32, i32)> {
 pub fn paint(history: &mut History, world: &mut World, center: (f64, f64), size: u32, terrain: Option<Terrain>) {
     for (x, y) in brush(center, size) {
         let tile = match terrain {
-            Some(_) => Tile { terrain, prop: world.prop_at(x, y).map(|p| p.kind) },
+            Some(_) => Tile { terrain, ..world.tile(x, y) },
             None => Tile::default(),
         };
         history.set(world, x, y, tile);
@@ -182,7 +182,7 @@ pub fn fill(history: &mut History, world: &mut World, x: i32, y: i32, terrain: T
     let mut seen = HashSet::from([(x, y)]);
     let mut queue = VecDeque::from([(x, y)]);
     while let Some((x, y)) = queue.pop_front() {
-        history.set(world, x, y, Tile { terrain: Some(terrain), prop: world.prop_at(x, y).map(|p| p.kind) });
+        history.set(world, x, y, Tile { terrain: Some(terrain), ..world.tile(x, y) });
         for next in [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)] {
             if world.terrain(next.0, next.1) == Some(from) && seen.insert(next) {
                 queue.push_back(next);
@@ -197,7 +197,7 @@ pub fn fill(history: &mut History, world: &mut World, x: i32, y: i32, terrain: T
 pub fn place(history: &mut History, world: &mut World, x: i32, y: i32, kind: PropKind) -> bool {
     let terrain = world.terrain(x, y);
     if terrain.is_some() {
-        history.set(world, x, y, Tile { terrain, prop: Some(kind) });
+        history.set(world, x, y, Tile { prop: Some(kind), ..world.tile(x, y) });
     }
     terrain.is_some()
 }
@@ -206,7 +206,7 @@ pub fn place(history: &mut History, world: &mut World, x: i32, y: i32, kind: Pro
 pub fn remove(history: &mut History, world: &mut World, x: i32, y: i32) -> bool {
     let standing = world.prop_at(x, y).is_some();
     if standing {
-        history.set(world, x, y, Tile { terrain: world.terrain(x, y), prop: None });
+        history.set(world, x, y, Tile { prop: None, ..world.tile(x, y) });
     }
     standing
 }
@@ -215,14 +215,27 @@ pub fn remove(history: &mut History, world: &mut World, x: i32, y: i32) -> bool 
 /// changes, when nothing stands on `from`, or `to` has no ground or
 /// something standing on it already (or is `from` itself).
 pub fn move_prop(history: &mut History, world: &mut World, from: (i32, i32), to: (i32, i32)) -> bool {
-    let (Some(prop), Some(terrain)) = (world.prop_at(from.0, from.1), world.terrain(to.0, to.1)) else {
+    let Some(prop) = world.prop_at(from.0, from.1) else {
         return false;
     };
-    if world.prop_at(to.0, to.1).is_some() {
+    if world.terrain(to.0, to.1).is_none() || world.prop_at(to.0, to.1).is_some() {
         return false;
     }
-    history.set(world, from.0, from.1, Tile { terrain: world.terrain(from.0, from.1), prop: None });
-    history.set(world, to.0, to.1, Tile { terrain: Some(terrain), prop: Some(prop.kind) });
+    history.set(world, from.0, from.1, Tile { prop: None, ..world.tile(from.0, from.1) });
+    history.set(world, to.0, to.1, Tile { prop: Some(prop.kind), ..world.tile(to.0, to.1) });
+    true
+}
+
+/// Put a marker on a tile, taking it from wherever it was. `false`
+/// where there is no ground.
+pub fn set_marker(history: &mut History, world: &mut World, marker: Marker, x: i32, y: i32) -> bool {
+    if world.terrain(x, y).is_none() {
+        return false;
+    }
+    if let Some((ox, oy)) = world.marker(marker).filter(|&at| at != (x, y)) {
+        history.set(world, ox, oy, Tile { marker: None, ..world.tile(ox, oy) });
+    }
+    history.set(world, x, y, Tile { marker: Some(marker), ..world.tile(x, y) });
     true
 }
 

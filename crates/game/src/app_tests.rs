@@ -3,9 +3,11 @@
 
 use lntrn_ui::testing::Harness;
 use lntrn_ui::{Modifiers, ShellOutput, WidgetId};
-use sim::Terrain;
+use sim::{Marker, Terrain};
 
 use super::*;
+use crate::anim::Pose;
+use crate::editor::Tool;
 
 const WINDOW: Vec2 = Vec2::new(1600.0, 1000.0);
 
@@ -74,18 +76,18 @@ fn paint_the_middle(h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game) -
     assert!(game.editing);
     game.editor.terrain = Terrain::Water;
     let tile = middle_tile(game);
-    assert_ne!(game.world.terrain(tile.0, tile.1), Some(Terrain::Water));
+    assert_ne!(game.sim.world.terrain(tile.0, tile.1), Some(Terrain::Water));
     let middle = game.view.center();
     click(h, shell, game, middle);
-    assert_eq!(game.world.terrain(tile.0, tile.1), Some(Terrain::Water));
+    assert_eq!(game.sim.world.terrain(tile.0, tile.1), Some(Terrain::Water));
     tile
 }
 
 #[test]
 fn the_map_loads_clean_and_the_world_has_the_whole_window() {
     let (_, shell, game) = started("loads");
-    assert!(!game.world.is_dirty());
-    assert_eq!(game.world.chunk_count(), 2);
+    assert!(!game.sim.world.is_dirty());
+    assert_eq!(game.sim.world.chunk_count(), 2);
     assert_eq!(shell.screen.area_count(), 1);
     assert_eq!(game.view, Rect::new(Vec2::ZERO, WINDOW));
     assert!(!game.editing);
@@ -115,7 +117,7 @@ fn a_click_on_the_world_does_nothing_until_the_editor_is_open() {
     let (mut h, mut shell, mut game) = started("closed");
     game.editor.terrain = Terrain::Water;
     click(&mut h, &mut shell, &mut game, WINDOW * 0.5);
-    assert!(!game.world.is_dirty());
+    assert!(!game.sim.world.is_dirty());
     assert!(!game.editor.history.can_undo());
 }
 
@@ -123,17 +125,17 @@ fn a_click_on_the_world_does_nothing_until_the_editor_is_open() {
 fn a_click_paints_the_tile_under_the_pointer_and_undo_and_redo_work_from_the_keys() {
     let (mut h, mut shell, mut game) = started("paint");
     let (x, y) = middle_tile(&game);
-    let before = game.world.terrain(x, y);
+    let before = game.sim.world.terrain(x, y);
     let (x, y) = paint_the_middle(&mut h, &mut shell, &mut game);
-    assert!(game.world.is_dirty());
+    assert!(game.sim.world.is_dirty());
 
     key(&mut h, &mut shell, &mut game, Key::Char('z'), Modifiers::CTRL);
-    assert_eq!(game.world.terrain(x, y), before);
+    assert_eq!(game.sim.world.terrain(x, y), before);
     key(&mut h, &mut shell, &mut game, Key::Char('Z'), Modifiers::CTRL | Modifiers::SHIFT);
-    assert_eq!(game.world.terrain(x, y), Some(Terrain::Water));
+    assert_eq!(game.sim.world.terrain(x, y), Some(Terrain::Water));
     key(&mut h, &mut shell, &mut game, Key::Char('z'), Modifiers::CTRL);
     key(&mut h, &mut shell, &mut game, Key::Char('y'), Modifiers::CTRL);
-    assert_eq!(game.world.terrain(x, y), Some(Terrain::Water));
+    assert_eq!(game.sim.world.terrain(x, y), Some(Terrain::Water));
 }
 
 #[test]
@@ -143,7 +145,7 @@ fn a_drag_paints_a_line_as_one_step() {
     game.editor.terrain = Terrain::Sand;
     let from = game.view.center() + Vec2::new(-250.0, -200.0);
     let (a, b) = (game.camera.to_world(from, game.view, game.scale), game.camera.to_world(from + Vec2::new(500.0, 0.0), game.view, game.scale));
-    let sand = |game: &Game| (a.x.floor() as i32..=b.x.floor() as i32).filter(|&x| game.world.terrain(x, a.y.floor() as i32) == Some(Terrain::Sand)).count();
+    let sand = |game: &Game| (a.x.floor() as i32..=b.x.floor() as i32).filter(|&x| game.sim.world.terrain(x, a.y.floor() as i32) == Some(Terrain::Sand)).count();
     let already = sand(&game);
 
     h.move_to(from);
@@ -172,10 +174,10 @@ fn the_panels_rows_pick_what_the_next_click_does() {
 
     // A grass tile with nothing on it, near the middle of the view.
     let (mx, my) = middle_tile(&game);
-    let (x, y) = (my - 3..my + 3).flat_map(|y| (mx - 3..mx + 3).map(move |x| (x, y))).find(|&(x, y)| game.world.terrain(x, y) == Some(Terrain::Grass) && game.world.prop_at(x, y).is_none()).expect("bare grass in view");
+    let (x, y) = (my - 3..my + 3).flat_map(|y| (mx - 3..mx + 3).map(move |x| (x, y))).find(|&(x, y)| game.sim.world.terrain(x, y) == Some(Terrain::Grass) && game.sim.world.prop_at(x, y).is_none()).expect("bare grass in view");
     let at = game.camera.to_screen(Vec2::new(x as f64 + 0.5, y as f64 + 0.5), game.view, game.scale);
     click(&mut h, &mut shell, &mut game, at);
-    assert_eq!(game.world.prop_at(x, y).map(|p| p.kind), Some(PropKind::Rock));
+    assert_eq!(game.sim.world.prop_at(x, y).map(|p| p.kind), Some(PropKind::Rock));
 }
 
 #[test]
@@ -190,14 +192,14 @@ fn the_move_tool_drags_a_prop_to_another_tile_and_one_undo_puts_it_back() {
     // first, to be carried to the second.
     let seen = game.camera.visible(game.view.size(), game.scale).shrink(2.0);
     let (x0, y0, x1, y1) = (seen.min.x.ceil() as i32, seen.min.y.ceil() as i32, seen.max.x.floor() as i32, seen.max.y.floor() as i32);
-    let bare: Vec<(i32, i32)> = (y0..y1).flat_map(|y| (x0..x1).map(move |x| (x, y))).filter(|&(x, y)| game.world.terrain(x, y) == Some(Terrain::Grass) && game.world.prop_at(x, y).is_none()).collect();
+    let bare: Vec<(i32, i32)> = (y0..y1).flat_map(|y| (x0..x1).map(move |x| (x, y))).filter(|&(x, y)| game.sim.world.terrain(x, y) == Some(Terrain::Grass) && game.sim.world.prop_at(x, y).is_none()).collect();
     let ((px, py), (tx, ty)) = (bare[0], *bare.last().expect("bare grass in view"));
     assert_ne!((px, py), (tx, ty));
-    assert!(game.world.place_prop(PropKind::Tree, px, py));
-    let prop = game.world.prop_at(px, py).expect("just placed");
+    assert!(game.sim.world.place_prop(PropKind::Tree, px, py));
+    let prop = game.sim.world.prop_at(px, py).expect("just placed");
     let on_screen = |game: &Game, x: i32, y: i32| game.camera.to_screen(Vec2::new(x as f64 + 0.5, y as f64 + 0.5), game.view, game.scale);
     let (from, to) = (on_screen(&game, prop.x, prop.y), on_screen(&game, tx, ty));
-    let props = game.world.props_in(-100, -100, 200, 200).count();
+    let props = game.sim.world.props_in(-100, -100, 200, 200).count();
 
     h.move_to(from);
     turn(&mut h, &mut shell, &mut game);
@@ -206,18 +208,18 @@ fn the_move_tool_drags_a_prop_to_another_tile_and_one_undo_puts_it_back() {
     assert_eq!(game.editor.carrying(), Some((prop.x, prop.y)));
     h.move_to(to);
     turn(&mut h, &mut shell, &mut game);
-    assert_eq!(game.world.prop_at(tx, ty).map(|p| p.kind), Some(prop.kind), "it follows the pointer before the button is up");
+    assert_eq!(game.sim.world.prop_at(tx, ty).map(|p| p.kind), Some(prop.kind), "it follows the pointer before the button is up");
     h.release();
     turn(&mut h, &mut shell, &mut game);
 
-    assert_eq!(game.world.prop_at(prop.x, prop.y), None);
-    assert_eq!(game.world.prop_at(tx, ty).map(|p| p.kind), Some(prop.kind));
-    assert_eq!(game.world.props_in(-100, -100, 200, 200).count(), props, "nothing was made or lost");
+    assert_eq!(game.sim.world.prop_at(prop.x, prop.y), None);
+    assert_eq!(game.sim.world.prop_at(tx, ty).map(|p| p.kind), Some(prop.kind));
+    assert_eq!(game.sim.world.props_in(-100, -100, 200, 200).count(), props, "nothing was made or lost");
     assert_eq!(game.editor.carrying(), None);
 
     key(&mut h, &mut shell, &mut game, Key::Char('z'), Modifiers::CTRL);
-    assert_eq!(game.world.prop_at(prop.x, prop.y).map(|p| p.kind), Some(prop.kind));
-    assert_eq!(game.world.prop_at(tx, ty), None);
+    assert_eq!(game.sim.world.prop_at(prop.x, prop.y).map(|p| p.kind), Some(prop.kind));
+    assert_eq!(game.sim.world.prop_at(tx, ty), None);
     assert!(!game.editor.history.can_undo());
 }
 
@@ -226,7 +228,7 @@ fn ctrl_s_saves_and_the_edit_is_there_when_the_map_is_loaded_again() {
     let (mut h, mut shell, mut game) = started("save");
     let (x, y) = paint_the_middle(&mut h, &mut shell, &mut game);
     key(&mut h, &mut shell, &mut game, Key::Char('s'), Modifiers::CTRL);
-    assert!(!game.world.is_dirty());
+    assert!(!game.sim.world.is_dirty());
     let again = World::load(&game.map).expect("loads");
     assert_eq!(again.terrain(x, y), Some(Terrain::Water));
 }
@@ -245,7 +247,7 @@ fn quitting_with_unsaved_changes_asks_and_discard_quits_without_saving() {
     assert!(shell.popup_open());
     // Escape is "cancel": the game is still running and still unsaved.
     assert!(!key(&mut h, &mut shell, &mut game, Key::Escape, Modifiers::NONE).quit);
-    assert!(!shell.popup_open() && game.world.is_dirty());
+    assert!(!shell.popup_open() && game.sim.world.is_dirty());
 
     key(&mut h, &mut shell, &mut game, Key::Char('q'), Modifiers::CTRL);
     let discard = dialog_button(&h, 1, "Discard");
@@ -285,7 +287,7 @@ fn a_map_that_does_not_load_says_so_and_starts_empty() {
     let mut h = Harness::new(WINDOW.x, WINDOW.y);
     turn(&mut h, &mut shell, &mut game);
     assert!(shell.popup_open(), "a dialog says the map did not load");
-    assert_eq!(game.world.chunk_count(), 0);
+    assert_eq!(game.sim.world.chunk_count(), 0);
 }
 
 #[test]
@@ -296,3 +298,6 @@ fn arrows_and_wasd_push_the_same_way_and_opposites_cancel() {
     assert_eq!(Game::key_push(&[Key::Char('s'), Key::ArrowUp]), Vec2::ZERO);
     assert_eq!(Game::key_push(&[Key::Char('x'), Key::Space]), Vec2::ZERO);
 }
+
+#[path = "app_play_tests.rs"]
+mod play;

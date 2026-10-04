@@ -10,6 +10,7 @@ use lntrn_math::Vec2;
 use sim::noise::unit;
 use sim::{PropKind, Terrain, World};
 
+use crate::anim::WalkSprites;
 use crate::assets::{SpriteId, SpriteSet};
 use crate::camera::Camera;
 
@@ -57,7 +58,20 @@ pub fn layers(corners: [Option<Terrain>; 4]) -> impl Iterator<Item = (Terrain, u
     })
 }
 
-/// Which sprite each kind of prop is drawn with.
+/// A sprite standing somewhere that is not part of the map: the
+/// player, a ghost the editor shows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Placed {
+    pub sprite: SpriteId,
+    /// The point of the world its anchor stands on, in tiles.
+    pub ground: Vec2,
+    /// Drawn mirrored left to right.
+    pub flip: bool,
+    /// Multiplies the sprite; premultiplied like it.
+    pub tint: [f32; 4],
+}
+
+/// Which sprite each thing in the world is drawn with.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Look {
     tree: Option<SpriteId>,
@@ -65,17 +79,18 @@ pub struct Look {
     herb_purple: Option<SpriteId>,
     herb_cyan: Option<SpriteId>,
     tuft: Option<SpriteId>,
+    pub player: WalkSprites,
 }
 
 impl Look {
     pub fn find(set: &SpriteSet) -> Look {
-        Look { tree: set.id("tree"), rock: set.id("rock"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft") }
+        Look { tree: set.id("tree"), rock: set.id("rock"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft"), player: WalkSprites::find(set, "player") }
     }
 
     /// The names of the sprites it looked for and did not find.
-    pub fn missing(&self) -> Vec<&'static str> {
+    pub fn missing(&self) -> Vec<String> {
         let all = [("tree", self.tree), ("rock", self.rock), ("herb_purple", self.herb_purple), ("herb_cyan", self.herb_cyan), ("tuft", self.tuft)];
-        all.into_iter().filter(|(_, id)| id.is_none()).map(|(name, _)| name).collect()
+        all.into_iter().filter(|(_, id)| id.is_none()).map(|(name, _)| name.to_owned()).chain(self.player.missing("player")).collect()
     }
 
     /// The sprite a kind of prop is drawn with, if the assets have it.
@@ -106,8 +121,10 @@ pub struct Scene {
 }
 
 impl Scene {
-    /// Everything a view of `size` pixels shows.
-    pub fn build(&mut self, world: &World, camera: &Camera, size: Vec2, scale: f64, set: &SpriteSet, look: &Look) {
+    /// Everything a view of `size` pixels shows: the map, and `extras`
+    /// standing among its props.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build(&mut self, world: &World, camera: &Camera, size: Vec2, scale: f64, set: &SpriteSet, look: &Look, extras: &[Placed]) {
         let seen = camera.visible(size, scale);
         let origin = camera.center.floor();
         self.origin = [origin.x as i32, origin.y as i32];
@@ -135,14 +152,17 @@ impl Scene {
         for prop in world.props_in(x0, y0, x1, y1) {
             if let Some(id) = look.prop(prop.kind) {
                 let ground = Vec2::new(prop.x as f64 + 0.5, prop.y as f64 + 0.5);
-                self.stand(set, id, ground, origin);
+                self.stand(set, id, ground, origin, false, [1.0; 4]);
             }
+        }
+        for placed in extras {
+            self.stand(set, placed.sprite, placed.ground, origin, placed.flip, placed.tint);
         }
         if let Some(id) = look.tuft {
             for y in y0..y1 {
                 for x in x0..x1 {
                     if let Some(ground) = tuft(world, x, y) {
-                        self.stand(set, id, ground, origin);
+                        self.stand(set, id, ground, origin, false, [1.0; 4]);
                     }
                 }
             }
@@ -153,9 +173,13 @@ impl Scene {
         self.sprites.extend(self.standing.iter().map(|(_, sprite)| *sprite));
     }
 
-    fn stand(&mut self, set: &SpriteSet, id: SpriteId, ground: Vec2, origin: Vec2) {
+    fn stand(&mut self, set: &SpriteSet, id: SpriteId, ground: Vec2, origin: Vec2, flip: bool, tint: [f32; 4]) {
         let sprite = set.get(id);
-        let instance = SpriteInstance { pos: (ground - sprite.anchor - origin).to_gpu(), size: sprite.size.to_gpu(), uv: sprite.uv, tint: [1.0; 4] };
+        let [u0, v0, u1, v1] = sprite.uv;
+        // Mirrored, the anchor is as far from the right edge as it was
+        // from the left.
+        let (anchor, uv) = if flip { (Vec2::new(sprite.size.x - sprite.anchor.x, sprite.anchor.y), [u1, v0, u0, v1]) } else { (sprite.anchor, sprite.uv) };
+        let instance = SpriteInstance { pos: (ground - anchor - origin).to_gpu(), size: sprite.size.to_gpu(), uv, tint };
         self.standing.push((ground, instance));
     }
 }
@@ -230,14 +254,15 @@ mod tests {
     fn built(center: Vec2, size: Vec2) -> Scene {
         let (world, set) = (sim::testmap::build(), set());
         let mut scene = Scene::default();
-        scene.build(&world, &Camera::new(center), size, 1.0, &set, &Look::find(&set));
+        scene.build(&world, &Camera::new(center), size, 1.0, &set, &Look::find(&set), &[]);
         scene
     }
 
     #[test]
     fn every_sprite_the_scene_asks_for_is_in_the_assets() {
-        assert_eq!(Look::find(&set()).missing(), Vec::<&str>::new());
-        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 5);
+        assert_eq!(Look::find(&set()).missing(), Vec::<String>::new());
+        // With no assets: the five of the map, and the walker's twelve.
+        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 17);
     }
 
     #[test]
@@ -281,10 +306,34 @@ mod tests {
         let center = Vec2::new(tree.x as f64 + 0.5, tree.y as f64 + 0.5);
         let mut scene = Scene::default();
         let look = Look::find(&set);
-        scene.build(&world, &Camera::new(center), Vec2::new(400.0, 400.0), 1.0, &set, &look);
+        scene.build(&world, &Camera::new(center), Vec2::new(400.0, 400.0), 1.0, &set, &look, &[]);
         let sprite = set.get(look.tree.unwrap());
         let want = (center - sprite.anchor - Vec2::new(tree.x as f64, tree.y as f64)).to_gpu();
         assert!(scene.sprites.iter().any(|s| s.pos == want && s.uv == sprite.uv), "the tree is not where its anchor puts it");
+    }
+
+    #[test]
+    fn an_extra_stands_among_the_props_and_a_flipped_one_is_mirrored_about_its_anchor() {
+        let (world, set) = (sim::testmap::build(), set());
+        let look = Look::find(&set);
+        let id = set.id("player_side_idle").expect("there");
+        let ground = Vec2::new(24.5, 14.5);
+        let extras = [Placed { sprite: id, ground, flip: false, tint: [1.0; 4] }, Placed { sprite: id, ground, flip: true, tint: [0.5; 4] }];
+        let mut scene = Scene::default();
+        scene.build(&world, &Camera::new(ground), Vec2::new(400.0, 400.0), 1.0, &set, &look, &extras);
+        let sprite = set.get(id);
+        let [u0, v0, u1, v1] = sprite.uv;
+        let plain = scene.sprites.iter().find(|s| s.uv == sprite.uv).expect("the extra is drawn");
+        let mirrored = scene.sprites.iter().find(|s| s.uv == [u1, v0, u0, v1]).expect("the flipped extra is drawn");
+        assert_eq!(mirrored.tint, [0.5; 4]);
+        // Both put the anchor on the same ground point.
+        let origin = Vec2::new(24.0, 14.0);
+        let anchor_of = |s: &SpriteInstance, from_left: f64| Vec2::from_gpu(s.pos) + Vec2::new(from_left, sprite.anchor.y) + origin;
+        assert!((anchor_of(plain, sprite.anchor.x) - ground).length() < 1e-5);
+        assert!((anchor_of(mirrored, sprite.size.x - sprite.anchor.x) - ground).length() < 1e-5);
+        // And they are sorted in with the rest.
+        let feet: Vec<f64> = scene.standing.iter().map(|(ground, _)| ground.y).collect();
+        assert!(feet.windows(2).all(|w| w[0] <= w[1]));
     }
 
     #[test]

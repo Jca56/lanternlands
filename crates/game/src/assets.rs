@@ -54,6 +54,22 @@ fn numbers<const N: usize>(doc: &Doc) -> Option<[f64; N]> {
     Some(out)
 }
 
+fn strings(doc: &Doc) -> Option<Vec<&str>> {
+    doc.as_list()?.iter().map(Doc::as_str).collect()
+}
+
+/// A `[grids.name]` table as the sprites it stands for: one per cell.
+fn grid_sprites(name: &str, entry: &Doc) -> Result<Vec<SpriteDef>, String> {
+    let whole = |v: &[f64; 2]| v.iter().all(|v| *v >= 1.0 && v.fract() == 0.0);
+    let file = entry.get("file").and_then(Doc::as_str).ok_or(format!("{name}: no file"))?;
+    let [w, h] = entry.get("cell").and_then(numbers::<2>).filter(whole).ok_or(format!("{name}: cell must be [width, height] in whole pixels"))?.map(|v| v as u32);
+    let anchor = entry.get("anchor").and_then(numbers::<2>).ok_or(format!("{name}: anchor must be [x, y]"))?;
+    let rows = entry.get("rows").and_then(strings).ok_or(format!("{name}: rows must be a list of names"))?;
+    let columns = entry.get("columns").and_then(strings).ok_or(format!("{name}: columns must be a list of names"))?;
+    let cell = |r: usize, c: usize| SpriteDef { name: format!("{name}_{}_{}", rows[r], columns[c]), file: file.to_owned(), rect: Some([c as u32 * w, r as u32 * h, w, h]), anchor };
+    Ok((0..rows.len()).flat_map(|r| (0..columns.len()).map(move |c| (r, c))).map(|(r, c)| cell(r, c)).collect())
+}
+
 pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
     let doc = lntrn_data::toml::parse(text).map_err(|e| e.to_string())?;
     let tile_px = doc.get("tile_px").and_then(Doc::as_f64).filter(|px| *px > 0.0).ok_or("tile_px is missing or is not a size")?;
@@ -70,6 +86,11 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
             }
         };
         sprites.push(SpriteDef { name: name.to_owned(), file, rect, anchor });
+    }
+    if let Some(grids) = doc.get("grids").and_then(Doc::as_map) {
+        for (name, entry) in grids.iter() {
+            sprites.extend(grid_sprites(name, entry)?);
+        }
     }
     Ok(Manifest { tile_px, sprites })
 }
@@ -207,6 +228,21 @@ anchor = [4.5, 6]
         assert_eq!(manifest.sprites[0], SpriteDef { name: "tree".into(), file: "sprites/objects.png".into(), rect: Some([4, 24, 40, 60]), anchor: [20.0, 50.0] });
         assert_eq!(manifest.sprites[1].rect, None);
         assert_eq!(manifest.sprites[1].anchor, [4.5, 6.0]);
+    }
+
+    #[test]
+    fn a_grid_is_one_sprite_per_cell_named_for_its_row_and_column() {
+        let text = format!("{TEXT}\n[grids.hero]\nfile = \"sprites/objects.png\"\ncell = [20, 30]\nanchor = [10, 28]\nrows = [\"down\", \"up\"]\ncolumns = [\"idle\", \"step\", \"pass\"]\n");
+        let manifest = parse_manifest(&text).expect("parses");
+        let grid: Vec<&SpriteDef> = manifest.sprites.iter().filter(|s| s.name.starts_with("hero_")).collect();
+        assert_eq!(grid.len(), 6);
+        assert_eq!(*grid[0], SpriteDef { name: "hero_down_idle".into(), file: "sprites/objects.png".into(), rect: Some([0, 0, 20, 30]), anchor: [10.0, 28.0] });
+        assert_eq!((grid[5].name.as_str(), grid[5].rect), ("hero_up_pass", Some([40, 30, 20, 30])));
+        // And they load like any other sprite.
+        let set = SpriteSet::from_manifest(&manifest, picture).expect("loads");
+        assert_eq!(set.get(set.id("hero_up_step").unwrap()).size, Vec2::new(0.1, 0.15));
+        let broken = text.replace("cell = [20, 30]", "cell = [20.5, 30]");
+        assert!(parse_manifest(&broken).unwrap_err().contains("hero: cell"));
     }
 
     #[test]

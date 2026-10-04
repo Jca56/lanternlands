@@ -1,6 +1,7 @@
 //! Explore the World: the window, the renderer and the interface over
 //! the simulation in the `sim` crate.
 
+mod anim;
 mod app;
 mod assets;
 mod atlas;

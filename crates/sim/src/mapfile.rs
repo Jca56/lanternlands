@@ -12,6 +12,7 @@
 //!                until every tile is covered, row by row
 //! "PROP"  names likewise
 //!         count u16, then each prop: x u8, y u8, name index u8
+//! "MARK"  the same as "PROP", for the map's markers
 //! ```
 //!
 //! Ground and props are written by name, not number, so kinds can be
@@ -23,13 +24,14 @@ use std::fs;
 use std::path::Path;
 
 use crate::terrain::Terrain;
-use crate::world::{AREA, CHUNK, Chunk, Prop, PropKind, VOID, World};
+use crate::world::{AREA, CHUNK, Chunk, Marker, Prop, PropKind, VOID, World};
 
 pub const EXTENSION: &str = "chunk";
 const MAGIC: [u8; 4] = *b"CHNK";
 const VERSION: u16 = 1;
 const TERRAIN: [u8; 4] = *b"TERR";
 const PROPS: [u8; 4] = *b"PROP";
+const MARKERS: [u8; 4] = *b"MARK";
 
 fn file_name(key: (i32, i32)) -> String {
     format!("{}_{}.{EXTENSION}", key.0, key.1)
@@ -74,20 +76,13 @@ pub(crate) fn encode(chunk: &Chunk) -> Vec<u8> {
         terrain.push(run[0]);
     }
 
-    let mut props = Vec::new();
-    // In a fixed order, so the same chunk is always the same bytes.
-    let mut standing = chunk.props.clone();
-    standing.sort_by_key(|p| (p.y, p.x));
-    let (names, indices) = name_table(standing.iter().map(|p| Some(p.kind.name())));
-    write_names(&mut props, &names);
-    props.extend_from_slice(&(standing.len() as u16).to_le_bytes());
-    for (prop, index) in standing.iter().zip(indices) {
-        props.extend_from_slice(&[prop.x.rem_euclid(CHUNK) as u8, prop.y.rem_euclid(CHUNK) as u8, index]);
-    }
-
     let mut sections = vec![(TERRAIN, terrain)];
-    if !standing.is_empty() {
-        sections.push((PROPS, props));
+    let standing = chunk.props.iter().map(|p| (p.kind.name(), p.x, p.y)).collect();
+    let marked = chunk.markers.iter().map(|&(m, x, y)| (m.name(), x, y)).collect();
+    for (tag, placed) in [(PROPS, standing), (MARKERS, marked)] {
+        if let Some(section) = placed_section(placed) {
+            sections.push((tag, section));
+        }
     }
     let mut out = Vec::new();
     out.extend_from_slice(&MAGIC);
@@ -99,6 +94,23 @@ pub(crate) fn encode(chunk: &Chunk) -> Vec<u8> {
         out.extend_from_slice(&payload);
     }
     out
+}
+
+/// Named things on tiles as a section's bytes; `None` when there are none.
+fn placed_section(mut placed: Vec<(&'static str, i32, i32)>) -> Option<Vec<u8>> {
+    if placed.is_empty() {
+        return None;
+    }
+    // In a fixed order, so the same chunk is always the same bytes.
+    placed.sort_by_key(|&(_, x, y)| (y, x));
+    let (names, indices) = name_table(placed.iter().map(|&(name, _, _)| Some(name)));
+    let mut out = Vec::new();
+    write_names(&mut out, &names);
+    out.extend_from_slice(&(placed.len() as u16).to_le_bytes());
+    for (&(_, x, y), index) in placed.iter().zip(indices) {
+        out.extend_from_slice(&[x.rem_euclid(CHUNK) as u8, y.rem_euclid(CHUNK) as u8, index]);
+    }
+    Some(out)
 }
 
 /// Bytes read front to back; running out is an error, not a panic.
@@ -175,8 +187,13 @@ pub(crate) fn decode(bytes: &[u8], key: (i32, i32)) -> Result<Chunk, String> {
         match tag {
             TERRAIN => read_terrain(&mut section, &mut chunk)?,
             // Props need the ground they stand on, which is written first.
-            PROPS if seen.contains(&TERRAIN) => read_props(&mut section, &mut chunk, key)?,
-            PROPS => return Err("its props come before its ground".to_owned()),
+            PROPS | MARKERS if !seen.contains(&TERRAIN) => return Err("something stands before its ground is laid".to_owned()),
+            PROPS => {
+                for (kind, x, y) in read_placed(&mut section, &chunk, key, "prop", PropKind::from_name)? {
+                    chunk.props.push(Prop { kind, x, y });
+                }
+            }
+            MARKERS => chunk.markers = read_placed(&mut section, &chunk, key, "marker", Marker::from_name)?,
             _ => {}
         }
     }
@@ -205,24 +222,28 @@ fn read_terrain(section: &mut Reader, chunk: &mut Chunk) -> Result<(), String> {
     section.done("the ground")
 }
 
-fn read_props(section: &mut Reader, chunk: &mut Chunk, key: (i32, i32)) -> Result<(), String> {
-    let names = section.names("prop", PropKind::from_name)?;
+/// A section of named things on tiles, each on ground and no two on one
+/// tile, as `(what, x, y)` in world tiles.
+fn read_placed<T: Copy>(section: &mut Reader, chunk: &Chunk, key: (i32, i32), what: &str, find: impl Fn(&str) -> Option<T>) -> Result<Vec<(T, i32, i32)>, String> {
+    let names = section.names(what, find)?;
+    let mut placed: Vec<(T, i32, i32)> = Vec::new();
     for _ in 0..section.u16()? {
         let (x, y, index) = (section.u8()? as i32, section.u8()? as i32, section.u8()?);
-        let kind = *names.get(index as usize).ok_or(format!("a prop is kind number {index} of {}", names.len()))?;
+        let item = *names.get(index as usize).ok_or(format!("a {what} is kind number {index} of {}", names.len()))?;
         if x >= CHUNK || y >= CHUNK {
-            return Err(format!("a prop stands at ({x}, {y}), outside the chunk"));
+            return Err(format!("a {what} is at ({x}, {y}), outside the chunk"));
         }
         if chunk.tiles[(y * CHUNK + x) as usize] == VOID {
-            return Err(format!("a prop stands at ({x}, {y}), where there is no ground"));
+            return Err(format!("a {what} is at ({x}, {y}), where there is no ground"));
         }
         let (x, y) = (key.0 * CHUNK + x, key.1 * CHUNK + y);
-        if chunk.props.iter().any(|p| (p.x, p.y) == (x, y)) {
-            return Err(format!("two props stand on tile ({x}, {y})"));
+        if placed.iter().any(|&(_, px, py)| (px, py) == (x, y)) {
+            return Err(format!("two {what}s are on tile ({x}, {y})"));
         }
-        chunk.props.push(Prop { kind, x, y });
+        placed.push((item, x, y));
     }
-    section.done("the props")
+    section.done(&format!("the {what}s"))?;
+    Ok(placed)
 }
 
 impl World {
@@ -278,6 +299,12 @@ impl World {
             let bytes = fs::read(&path).map_err(|e| wrong(e.to_string()))?;
             world.chunks.insert(key, decode(&bytes, key).map_err(wrong)?);
         }
+        for marker in Marker::ALL {
+            let places = world.chunks.values().flat_map(|c| &c.markers).filter(|(m, _, _)| *m == marker).count();
+            if places > 1 {
+                return Err(format!("{}: the map has {places} {} markers; there is only ever one", dir.display(), marker.name()));
+            }
+        }
         Ok(world)
     }
 
@@ -304,6 +331,7 @@ mod tests {
         }
         // Chunk (-2, 3): its tiles start at (-64, 96).
         chunk.props = vec![Prop { kind: PropKind::Rock, x: -64 + 30, y: 96 + 2 }, Prop { kind: PropKind::Tree, x: -64 + 5, y: 96 }, Prop { kind: PropKind::HerbCyan, x: -64 + 31, y: 96 + 31 }];
+        chunk.markers = vec![(Marker::PlayerStart, -64 + 9, 96 + 20)];
         chunk
     }
 
@@ -313,7 +341,7 @@ mod tests {
             props.sort_by_key(|p| (p.y, p.x));
             props
         };
-        a.tiles == b.tiles && sorted(a) == sorted(b)
+        a.tiles == b.tiles && sorted(a) == sorted(b) && a.markers == b.markers
     }
 
     #[test]
@@ -322,7 +350,7 @@ mod tests {
         let back = decode(&encode(&chunk), (-2, 3)).expect("decodes");
         assert!(same(&chunk, &back));
         // An empty chunk and a full one too.
-        for chunk in [Chunk::new(), Chunk { tiles: Box::new([Terrain::Dirt.rank(); AREA]), props: Vec::new() }] {
+        for chunk in [Chunk::new(), Chunk { tiles: Box::new([Terrain::Dirt.rank(); AREA]), ..Chunk::new() }] {
             assert!(same(&chunk, &decode(&encode(&chunk), (0, 0)).expect("decodes")));
         }
     }
@@ -336,7 +364,7 @@ mod tests {
 
     #[test]
     fn plain_ground_takes_a_handful_of_bytes() {
-        let grass = Chunk { tiles: Box::new([Terrain::Grass.rank(); AREA]), props: Vec::new() };
+        let grass = Chunk { tiles: Box::new([Terrain::Grass.rank(); AREA]), ..Chunk::new() };
         assert!(encode(&grass).len() < 40, "{} bytes for one run of grass", encode(&grass).len());
         assert!(encode(&sample()).len() < 400, "{} bytes", encode(&sample()).len());
     }
@@ -345,7 +373,7 @@ mod tests {
     fn names_not_numbers_are_what_is_stored() {
         let bytes = encode(&sample());
         let has = |name: &str| bytes.windows(name.len()).any(|w| w == name.as_bytes());
-        assert!(has("grass") && has("water") && has("sand") && has("tree") && has("herb_cyan"));
+        assert!(has("grass") && has("water") && has("sand") && has("tree") && has("herb_cyan") && has("player_start"));
         assert!(!has("dirt"), "a ground the chunk does not use is not named");
     }
 

@@ -46,6 +46,11 @@ impl Terrain {
     pub fn from_name(name: &str) -> Option<Terrain> {
         Terrain::ALL.into_iter().find(|t| t.name() == name)
     }
+
+    /// Whether it can be walked on.
+    pub const fn walkable(self) -> bool {
+        !matches!(self, Terrain::Water)
+    }
 }
 
 #[cfg(test)]

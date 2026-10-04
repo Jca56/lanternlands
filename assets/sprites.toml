@@ -5,9 +5,20 @@
 #         out when the sprite is the whole picture
 # anchor  the pixel, counted from the rect's top-left corner, that stands
 #         on the ground: the middle of the tile the sprite is on
+#
+# A [grids.name] table cuts a sheet of equal cells into sprites called
+# name_row_column, one per cell, all with the same anchor in their cell.
 
 # How many of the art's pixels a tile is across.
 tile_px = 200
+
+# The player on foot. The side view faces right; left is its mirror.
+[grids.player]
+file = "sprites/player-01.png"
+cell = [240, 320]
+anchor = [120, 286]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b"]
 
 [sprites.tree]
 file = "sprites/objects-01.png"

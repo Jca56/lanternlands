@@ -15,7 +15,7 @@ use sim::{PropKind, World};
 use super::*;
 use crate::assets::SpriteSet;
 use crate::camera::Camera;
-use crate::scene::Look;
+use crate::scene::{Look, Placed};
 
 const SIZE: [u32; 2] = [800, 600];
 const VIEW: Rect = Rect::new(Vec2::ZERO, Vec2::new(SIZE[0] as f64, SIZE[1] as f64));
@@ -67,6 +67,11 @@ fn shoot(name: &str, center: Vec2, zoom: f64) -> Option<Shot> {
 
 /// The same, with or without the sprites.
 fn shoot_with(name: &str, center: Vec2, zoom: f64, sprites: bool) -> Option<Shot> {
+    shoot_scene(name, center, zoom, sprites, |_| Vec::new())
+}
+
+/// The same, with whatever `extras` puts in the world besides the map.
+fn shoot_scene(name: &str, center: Vec2, zoom: f64, sprites: bool, extras: impl FnOnce(&SpriteSet) -> Vec<Placed>) -> Option<Shot> {
     let Some((gpu, _turn)) = gpu() else {
         eprintln!("SKIPPED {name}: no GPU to draw with");
         return None;
@@ -76,7 +81,7 @@ fn shoot_with(name: &str, center: Vec2, zoom: f64, sprites: bool) -> Option<Shot
     let camera = Camera { center, zoom };
     let mut scene = Scene::default();
     let look = if sprites { Look::find(&set) } else { Look::default() };
-    scene.build(&world, &camera, VIEW.size(), 1.0, &set, &look);
+    scene.build(&world, &camera, VIEW.size(), 1.0, &set, &look, &extras(&set));
 
     let window_format = wgpu::TextureFormat::Rgba8UnormSrgb;
     let mut renderer = WorldRenderer::new(gpu, window_format, &set.sheet);
@@ -249,4 +254,52 @@ fn plain_grass_is_one_flat_colour() {
     let grass = bytes_of_hex(STUDIO_GRASS);
     let plain = (0..SIZE[1]).flat_map(|y| (0..SIZE[0]).map(move |x| (x, y))).filter(|&(x, y)| shot.picture.pixel(x, y)[..3] == grass).count();
     assert!(plain > (SIZE[0] * SIZE[1] * 2 / 3) as usize, "only {plain} pixels of plain grass");
+}
+
+/// Colours of the player's drawing, as it was drawn in Lantern Studio.
+const TUNIC: u32 = 0x5572ac;
+const SKIN: u32 = 0xe0bd97;
+const HAIR: u32 = 0x68411f;
+const OUTLINE: u32 = 0x271a1c;
+
+#[test]
+fn the_player_is_drawn_on_their_ground_in_their_own_colours() {
+    let (x, y) = lone_tree();
+    // Two tiles to the tree's right, on the grass the tree test found bare.
+    let ground = Vec2::new(x as f64 + 2.0, y as f64 + 1.0);
+    let placed = |set: &SpriteSet| vec![Placed { sprite: set.id("player_down_idle").expect("there"), ground, flip: false, tint: [1.0; 4] }];
+    let Some(shot) = shoot_scene("player", ground + Vec2::new(0.0, -0.5), 1.0, true, placed) else { return };
+    // Points of the drawing from its anchor (between the feet), in
+    // tiles: 200 of the sheet's pixels each.
+    close(shot.at(ground + Vec2::new(0.0, -0.45)), TUNIC, 2, "the tunic");
+    close(shot.at(ground + Vec2::new(0.0, -0.78)), SKIN, 2, "the face, under the eyes");
+    close(shot.at(ground + Vec2::new(0.0, -1.18)), HAIR, 2, "the hair");
+    close(shot.at(ground + Vec2::new(-0.09, -0.875)), OUTLINE, 3, "the left eye");
+    close(shot.at(ground + Vec2::new(0.6, -0.5)), STUDIO_GRASS, 1, "the grass beside them");
+}
+
+#[test]
+fn the_side_view_faces_right_and_its_mirror_faces_left() {
+    let (x, y) = lone_tree();
+    let ground = Vec2::new(x as f64 + 2.0, y as f64 + 1.0);
+    for (name, flip) in [("player-right", false), ("player-left", true)] {
+        let placed = |set: &SpriteSet| vec![Placed { sprite: set.id("player_side_idle").expect("there"), ground, flip, tint: [1.0; 4] }];
+        let Some(shot) = shoot_scene(name, ground + Vec2::new(0.0, -0.5), 1.0, true, placed) else { return };
+        // The eye is on the side they face; the back of the head is hair.
+        let front = if flip { -0.17 } else { 0.17 };
+        close(shot.at(ground + Vec2::new(front, -0.875)), OUTLINE, 3, &format!("{name}: the eye"));
+        close(shot.at(ground + Vec2::new(-front, -0.875)), HAIR, 2, &format!("{name}: the back of the head"));
+    }
+}
+
+#[test]
+fn a_ghost_lets_the_ground_show_through() {
+    let (x, y) = lone_tree();
+    let ground = Vec2::new(x as f64 + 2.0, y as f64 + 1.0);
+    let placed = |set: &SpriteSet| vec![Placed { sprite: set.id("player_down_idle").expect("there"), ground, flip: false, tint: [0.5; 4] }];
+    let Some(shot) = shoot_scene("ghost", ground + Vec2::new(0.0, -0.5), 1.0, true, placed) else { return };
+    // Half tunic, half grass, blended in the art's own numbers.
+    let (tunic, grass) = (bytes_of_hex(TUNIC), bytes_of_hex(STUDIO_GRASS));
+    let half = [0, 1, 2].map(|c| (tunic[c] as u32 + grass[c] as u32) / 2);
+    close(shot.at(ground + Vec2::new(0.0, -0.45)), half[0] << 16 | half[1] << 8 | half[2], 3, "the ghost's tunic over grass");
 }

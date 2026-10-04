@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use sim::{PropKind, Terrain, Tile, World};
+use sim::{Marker, PropKind, Terrain, Tile, World};
 
 /// A fresh folder under the build's own scratch space.
 fn folder(name: &str) -> PathBuf {
@@ -51,7 +51,7 @@ fn only_what_changed_is_written() {
     assert_eq!(fs::read(dir.join("1_0.chunk")).unwrap(), untouched);
     let back = World::load(&dir).unwrap();
     assert_eq!(back.tile(3, 3).terrain, Some(Terrain::Water));
-    assert_eq!(back.tile(-1, -40), Tile { terrain: Some(Terrain::Sand), prop: Some(PropKind::Rock) });
+    assert_eq!(back.tile(-1, -40), Tile { terrain: Some(Terrain::Sand), prop: Some(PropKind::Rock), marker: None });
 }
 
 #[test]
@@ -98,4 +98,34 @@ fn a_bad_chunk_file_fails_the_load_and_names_the_file() {
     fs::write(dir.join("east.chunk"), b"").unwrap();
     let why = World::load(&dir).err().expect("refused");
     assert!(why.contains("east.chunk") && why.contains("name"), "{why}");
+}
+
+#[test]
+fn the_player_start_is_saved_with_the_map_and_moves_between_chunk_files() {
+    let dir = folder("start");
+    let mut world = sim::testmap::build();
+    assert!(world.set_marker(Marker::PlayerStart, 24, 14));
+    world.save(&dir).unwrap();
+    assert_eq!(World::load(&dir).unwrap().marker(Marker::PlayerStart), Some((24, 14)));
+    // Moved into the other chunk: both files are rewritten, one start is left.
+    assert!(world.set_marker(Marker::PlayerStart, 40, 5));
+    assert_eq!(world.save(&dir), Ok(2));
+    let back = World::load(&dir).unwrap();
+    assert_eq!(back.marker(Marker::PlayerStart), Some((40, 5)));
+    assert_eq!(back.marker_at(24, 14), None);
+}
+
+#[test]
+fn a_map_with_two_player_starts_is_refused() {
+    let (one, two) = (folder("two_starts_a"), folder("two_starts"));
+    let mut world = sim::testmap::build();
+    world.set_marker(Marker::PlayerStart, 5, 5);
+    world.save(&one).unwrap();
+    let mut other = sim::testmap::build();
+    other.set_marker(Marker::PlayerStart, 40, 5);
+    other.save(&two).unwrap();
+    // One chunk from each map: a start in both.
+    fs::copy(one.join("0_0.chunk"), two.join("0_0.chunk")).unwrap();
+    let why = World::load(&two).err().expect("refused");
+    assert!(why.contains("2 player_start markers"), "{why}");
 }
