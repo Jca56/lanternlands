@@ -57,23 +57,24 @@ impl PersonKind {
         }
     }
 
-    /// What they have to say, a line at a time.
+    /// What they have to say, a line at a time: their own lives and
+    /// each other. Nobody tells the player how the game works.
     pub const fn lines(self) -> &'static [&'static str] {
         match self {
             PersonKind::Smith => &[
-                "Copper and tin, one of each, and the furnace gives you a bronze bar.",
-                "Bars go on the anvil. Make a pickaxe first: with one in your bag, rocks give up their ore quicker.",
-                "After that, armour. A full set of bronze turns away most of what a goblin swings at you.",
+                "Thirty years at this anvil and my back sounds like a hinge. Don't get old, that's my advice.",
+                "Tin's gone up again. Odo says it's the goblins. Odo says everything is the goblins.",
+                "Maren keeps leaving flowers on my furnace. They don't last long, but it's the thought.",
             ],
             PersonKind::Herbalist => &[
-                "Purple herbs grow all over these fields. The cyan ones take a practised hand to pick.",
-                "A purple herb and a goblin tooth in the cauldron make a healing potion.",
-                "Drink it from your bag when a fight turns against you. It does nothing for you while you are whole.",
+                "Mind the sprouts! I have been talking that one into growing for a week.",
+                "Bram hammers from dawn. I told him my cauldron needs quiet. He laughed, so now his tea tastes of feet.",
+                "Odo asked me for something to keep him awake on his round. I told him to try walking faster.",
             ],
             PersonKind::Guard => &[
-                "Goblins. They come for you the moment they see you, but they will not follow far from their camp.",
-                "If one gets the better of you, your bag stays in a grave where you fell. Go back for it.",
-                "Fall again before you reach it and the old grave crumbles, with everything in it.",
+                "Two steps that way, two steps back. They call it a patrol. I call it a very small walk.",
+                "Nothing ever happens here. I'm not complaining. Well, I am a bit.",
+                "Bram made this helmet. It's a fine helmet. It is also a size too small, and he knows it.",
             ],
         }
     }

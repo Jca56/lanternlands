@@ -64,6 +64,7 @@ Locked with Alva on 2026-10-04.
 | Inventory | 30 slots, 5 across and 6 down (taller than wide); materials stack, gear does not. Bank in towns |
 | World layout | One seamless overworld streamed in chunks; dungeons, caves, and building interiors are separate maps entered through doors |
 | People | They live on tiles the map gives them, put there with the editor like monsters. A press on one walks the player up to them and they talk |
+| Villager talk | Their own lives and each other, a bit funny. Never how the game works (Alva, 2026-10-04: "I'm the only one playing so they don't need to tell me what I already know") |
 | Dialogue | Lines in a box (Alva, 2026-10-04): who is speaking and what they say, a line at a time, with a press for the next. Made so that replies to choose from can be added when quests come |
 | Towns | Open-air villages for now (Alva, 2026-10-04): market stalls, a bank chest and other scenery drawn as props, with no insides. Buildings with doors into maps of their own are a later milestone |
 
@@ -157,13 +158,13 @@ Forging is 15 experience a bar. The levels are set so that making each piece onc
 
 **People.** Each is the player's own body in other clothes, with gear's drawings over them in other colours.
 
-| Who | Does | Looks | Keeps to | Tells the player about |
+| Who | Does | Looks | Keeps to | Talks about |
 |---|---|---|---|---|
-| Bram | Smith | Grey tunic, black hair, a leather apron and dark gloves | Where he is put | Bronze from copper and tin, the pickaxe first, then armour |
-| Maren | Herbalist | Green tunic, grey hair, brown skin | Where she is put | Which herbs grow where, the healing potion, when to drink it |
-| Odo | Guard | Red tunic under the whole bronze set, sword and shield in hand | A round within 2 tiles of home, a step every 8 to 19 ticks | Goblins and their camps, the grave, losing it |
+| Bram | Smith | Grey tunic, black hair, a leather apron and dark gloves | Where he is put | His back, the price of tin, the flowers Maren leaves on his furnace |
+| Maren | Herbalist | Green tunic, grey hair, brown skin | Where she is put | Her sprouts, Bram's hammering and what she did to his tea, Odo |
+| Odo | Guard | Red tunic under the whole bronze set, sword and shield in hand | A round within 2 tiles of home, a step every 8 to 19 ticks | How small his patrol is, how little happens, his helmet being a size too small |
 
-Each has three lines. What they say is true of the game as it is: it is the only teaching there is so far.
+Each has three lines. The first three villagers shipped telling the player how smithing, potions and graves work; Alva had that taken out the same day.
 
 **Fighting.**
 
@@ -352,6 +353,7 @@ Milestones 1 to 8a and the save game, as of 2026-10-04.
 73. Space and Enter hear the next line as well as the button.
 74. A tile is home to one, monster or person. The move tool carries props only: someone's home is taken away and put down again.
 75. There is no picture of the speaker in the talk box yet.
+76. Every word of the villagers' new lines (the subject, their own lives, was Alva's choice).
 
 ## Open questions
 
