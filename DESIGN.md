@@ -235,6 +235,7 @@ What it proposes, none of it in the game yet:
 - **Grain.** The grass has a fine grain over it. The game's ground has none today, so the shader would have to add it.
 - **Sizes.** A tree is about 3 tiles tall (560 px) where today's is about 2; the copper rock is about 1.25 tiles wide; the furnace about 2 tiles tall with its chimney; a herb about half a tile. They are bigger so the taller player does not dwarf them.
 - **How things are drawn.** As the figures are: flat colours, a thin outline (2.5 px at game size), two or three flat tones where a thing needs form (the tree's leaves, the rock's faces), line details (bark, cracks, mortar, leaf veins), and a flat see-through shadow under each. The fire is the only bright colour in the picture.
+- **Trees.** Third try. The first had smooth round crowns and Alva asked for them "more ragged"; the second had spiky leaves, three gaps and limbs sticking out all round, and "looks like they got hit by a hurricane"; Alva asked for "somewhere in between". So: the crown's edge is lumpy and uneven but soft, in all three greens; one dark gap shows through it with a branch across; one bare limb sticks out past the leaves; the leaf marks are short wavy strokes; the trunk has a hollow. Alva: "good for now, we might tweak later", and the real game needs two or three tree drawings, not one, "so not every single tree in an entire forest has the exact same hole in it".
 
 Decided with Alva on 2026-10-04, for when the real sheets are redrawn:
 
