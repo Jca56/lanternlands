@@ -227,6 +227,23 @@ Style test 03: `art/concepts/style-test-03.png` (source `style-test-03.lstudio`;
 
 Style test 04: `art/concepts/style-test-04.png` (source `style-test-04.lstudio`; about 17 MB together, so kept out of git too). Drawn 2026-10-04: the goblin from the front, from the back and from the side, standing, at twice game size and at real game size, and beside them the player and the goblin facing each other at real game size. **Waiting for Alva's verdict on the sheet as a whole.** Alva saw the first side view, a thin and wiry one, and said "I like the skinny side goblin! Make the front view goblin thinner", so the front view here is the one to go by, not the one in test 02: its body (torso, arms, legs) is 20% narrower, its head, ears, hands, feet and club are the same size, and it is redrawn as plain shapes. From the side the goblin faces right with the club in the near hand, its head resting on the ground in front of him; the far arm, leg and ear are a darker green. From the back everything is mirrored, so the club is on the left and the clawed hand on the right; the head is bald and sits behind the shoulders, which is what makes him read as hunched; a row of bumps marks the spine, with a shoulder blade either side and a stitched scar; the feet are heels with two claws showing.
 
+Style test 05: `art/concepts/style-test-05.png` (source `style-test-05.lstudio`; about 13 MB together, kept out of git). Drawn 2026-10-04: a patch of the world, 10 tiles by 6 at real game size, to see whether the whole game hangs together in the new style. **Waiting for Alva's verdict.** In it: dark grass, a dirt road with a darker rim, a pond in its sand, two trees, a copper rock, a purple and a cyan herb, a furnace with its fire lit, and the player and a goblin (from tests 03 and 04) facing each other on the road.
+
+What it proposes, none of it in the game yet:
+
+- **Ground colours.** Grass `#374528`, tuft `#4c5f33` and `#26331c`, road `#56472f` with rim `#3d3122`, pebble `#6a6253`, sand `#6c6145`, water `#2b4452` with rim `#1e323d` and highlight `#4d6a77`. The shapes are the ones the ground shader already makes (flat colour, rounded edge, a rim just inside it).
+- **Grain.** The grass has a fine grain over it. The game's ground has none today, so the shader would have to add it.
+- **Sizes.** A tree is about 3 tiles tall (560 px) where today's is about 2; the copper rock is about 1.25 tiles wide; the furnace about 2 tiles tall with its chimney; a herb about half a tile. They are bigger so the taller player does not dwarf them.
+- **How things are drawn.** As the figures are: flat colours, a thin outline (2.5 px at game size), two or three flat tones where a thing needs form (the tree's leaves, the rock's faces), line details (bark, cracks, mortar, leaf veins), and a flat see-through shadow under each. The fire is the only bright colour in the picture.
+
+Decided with Alva on 2026-10-04, for when the real sheets are redrawn:
+
+- **Height.** Sprites stand as drawn: the player about 1.7 tiles tall (340 px at the art's 200 px per tile), the goblin about 1.2. Trees, rocks and stations are redrawn bigger to match.
+- **Clothes.** The outfit in the tests (tunic, mantle, bracers, boots) is the player's everyday look with nothing equipped. Armour is still separate sheets drawn over the body, as today.
+- **Villagers.** They share the player's body in other colours, but each gets a head of their own: hair, face, perhaps a beard.
+- **Order.** The world is tried on paper first (style test 05) before any sheet the game loads is redrawn.
+- Claude's own calls, not asked: the sheets keep today's six frames for each facing, left is still the side view mirrored, and a small piece for the fingers is drawn over a held weapon's grip.
+
 The style of test 01, which is what the game uses today:
 
 - 100 px per tile at authoring size; each scene is 6 x 6 tiles. Player is about 1.3 tiles tall, goblin about 1.1. (Tile size and on-screen zoom still to be confirmed in the running game.)
