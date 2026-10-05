@@ -25,7 +25,7 @@ Locked with Alva on 2026-10-04.
 | Stack | Rust + wgpu + Lantern UI 2 (path dependency, not modified without asking) |
 | Movement | Click-to-move on a tile grid, pathfinding, one step per 0.4 s tick, eight directions with no corner cutting |
 | Camera | 3/4 top-down (fronts of trees, buildings, characters visible) |
-| Art | Bold flat shapes: thick dark outlines, flat colours, big readable silhouettes. Drawn in Lantern Studio 3. Palette: B Earthy (see Art) |
+| Art | Moving to style test 02: grown-up bodies, flat colours with a thin outline, line details, a dark muted palette (see Art). Drawn in Lantern Studio 3. Until it is redrawn the game still shows style test 01: bold flat shapes, thick dark outlines, palette B Earthy |
 | World building | In-game map editor (toggle-able mode), our own map file format |
 | Combat styles | Melee / ranged / magic triangle designed in from day one; melee gets content first |
 | Combat depth | Auto-attack on ticks + abilities on a hotbar (cooldowns; mana for spells). Built in that order: fighting first, abilities right after |
@@ -212,7 +212,18 @@ Experience for the damage abilities do is the same as for plain blows.
 
 Style test 01: `art/concepts/style-test-01.png` (editable source `style-test-01.lstudio` next to it). **Approved by Alva 2026-10-04: the style is right, and the palette is B Earthy.**
 
-The style, as drawn in the test:
+Style test 02: `art/concepts/style-test-02-flat.png` (source `style-test-02.lstudio`, which also holds a fully painted version, exported as `style-test-02.png`). Drawn 2026-10-04 after Alva said the game looks like "a small children's game" and asked for "a bit more realistic and gritty". **Approved by Alva 2026-10-04 in its flat form: "This is exactly perfect! Like not flat flat there's still details in there but not full painted." Nothing in the game uses it yet.** The three files are about 23 MB together, so they are kept out of git (Alva: "too big") and live only in the working folder. It shows the player and a goblin only, one standing pose each, drawn at twice game size on a mocked-up dark ground, with the old sprites beside them at real game size.
+
+The style of test 02, which is where the art is going:
+
+- Grown-up bodies, about 5 heads tall (Alva's pick). The player stands about 1.7 tiles tall, the goblin about 1.2. The goblin is feral: hunched, torn ears, slit yellow eyes, an underbite with tusks, claws.
+- Flat colours with a thin outline: 4 px at twice game size, so 2 px in the game. No soft shadows, no light, no grain.
+- Line details on top of the flats, in flat colours too: folds, stitches, straps and buckles, quilting, a patch, a scar, brows, claws, a tooth necklace, wood grain, a few dabs of mud.
+- A dark, muted palette: each figure is pulled down in saturation (player 14, goblin 20) and up a little in contrast.
+- A weapon is held blade up, as in the game today, and is drawn over the hand with the fingers over its grip.
+- The full painted version (shadow, light and grain on layers clipped to each body part) is kept in the source under the group SHADED for comparison. Alva chose against it.
+
+The style of test 01, which is what the game uses today:
 
 - 100 px per tile at authoring size; each scene is 6 x 6 tiles. Player is about 1.3 tiles tall, goblin about 1.1. (Tile size and on-screen zoom still to be confirmed in the running game.)
 - One outline colour: 5 px on main silhouettes, 3 to 4 px on details.
