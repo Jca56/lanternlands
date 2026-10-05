@@ -21,6 +21,7 @@ use crate::editor::MapEditor;
 use crate::hotbar::{self, AbilityPictures};
 use crate::hud::{Hud, ItemPictures};
 use crate::panel::{self, Asked, Pictures};
+use crate::parchment;
 use crate::render::WorldRenderer;
 use crate::saves::{SLOTS, Saves};
 use crate::title::Slot;
@@ -264,6 +265,23 @@ impl Game {
         };
         game.refresh_slots();
         game
+    }
+
+    /// The shell the game runs in: one area, the world, and the game's
+    /// own look.
+    pub fn shell() -> Shell<Game> {
+        let mut shell = Shell::new(View::World);
+        parchment::dress(&mut shell.prefs.theme);
+        shell
+    }
+
+    /// Housekeeping after a rebuild: the look is the game's own whatever
+    /// preferences were loaded, and the editor's panel is opened or
+    /// closed if that was asked for. Returns whether the frame is to be
+    /// laid out again.
+    pub(super) fn keep_house(&mut self, shell: &mut Shell<Self>) -> bool {
+        let dressed = parchment::dress(&mut shell.prefs.theme);
+        self.sync_panel(shell) || dressed
     }
 
     /// Quit the game: at once, or after asking about map changes that

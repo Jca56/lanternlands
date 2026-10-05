@@ -15,7 +15,7 @@ const WINDOW: Vec2 = Vec2::new(1600.0, 1000.0);
 /// let the host change the layout, and lay out again if it did.
 fn turn(h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game) -> ShellOutput {
     let out = h.shell_settle(shell, game, 4);
-    if game.sync_panel(shell) {
+    if game.keep_house(shell) {
         h.shell_settle(shell, game, 4);
     }
     out
@@ -29,7 +29,7 @@ fn opened(name: &str) -> (Harness, Shell<Game>, Game) {
     let _ = std::fs::remove_dir_all(&scratch);
     sim::testmap::build().save(&scratch.join("map")).expect("the map is written");
     let mut game = Game::open(&root.join("assets"), scratch.join("map"), scratch.join("saves"));
-    let mut shell = Shell::new(View::World);
+    let mut shell = Game::shell();
     shell.title_bar = false;
     let mut h = Harness::new(WINDOW.x, WINDOW.y);
     turn(&mut h, &mut shell, &mut game);
@@ -319,7 +319,7 @@ fn a_map_that_does_not_load_says_so_and_starts_empty() {
     std::fs::create_dir_all(scratch.join("map")).unwrap();
     std::fs::write(scratch.join("map/0_0.chunk"), b"not a chunk").unwrap();
     let mut game = Game::open(&root.join("assets"), scratch.join("map"), scratch.join("saves"));
-    let mut shell = Shell::new(View::World);
+    let mut shell = Game::shell();
     shell.title_bar = false;
     let mut h = Harness::new(WINDOW.x, WINDOW.y);
     turn(&mut h, &mut shell, &mut game);
@@ -371,3 +371,6 @@ mod rings;
 
 #[path = "app_bank_tests.rs"]
 mod bank;
+
+#[path = "app_drag_tests.rs"]
+mod drags;

@@ -28,7 +28,7 @@ pub(super) fn create(h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game, 
 fn reopened(game: &Game) -> (Harness, Shell<Game>, Game) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut again = Game::open(&root.join("assets"), game.map.clone(), game.saves.dir().to_owned());
-    let mut shell = Shell::new(View::World);
+    let mut shell = Game::shell();
     shell.title_bar = false;
     let mut h = Harness::new(WINDOW.x, WINDOW.y);
     turn(&mut h, &mut shell, &mut again);

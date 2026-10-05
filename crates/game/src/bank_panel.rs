@@ -9,6 +9,7 @@ use sim::Sim;
 use sim::bank::SLOTS;
 
 use crate::bag_panel::{self, PAD, cell, count, name_line, slot};
+use crate::drag::{Drag, Place};
 use crate::hud::{ItemPictures, backdrop};
 
 /// Sizes in logical pixels.
@@ -36,7 +37,8 @@ pub enum Asked {
 
 /// Draw the panel, if the player is at the bank: on the left of the
 /// world's area `view`, up the middle. Gives what a press asked for.
-pub fn draw(ui: &mut Ui, view: Rect, sim: &Sim, pictures: &ItemPictures) -> Option<Asked> {
+/// Anything in it can be carried off, and anything carried put down.
+pub fn draw(ui: &mut Ui, view: Rect, sim: &Sim, pictures: &ItemPictures, drag: &mut Drag) -> Option<Asked> {
     if !sim.banking() {
         return None;
     }
@@ -66,10 +68,12 @@ pub fn draw(ui: &mut Ui, view: Rect, sim: &Sim, pictures: &ItemPictures) -> Opti
         let mut pointed = None;
         for (i, held) in sim.bank.slots().iter().enumerate() {
             let cell = cell(ui, first, i, COLUMNS);
-            let r = ui.interact(ui.id("banked").with_index(i), cell, if held.is_some() { Sense::CLICK } else { Sense::NONE });
-            slot(ui, cell, *held, pictures, r.hovered);
+            let r = ui.interact(ui.id("banked").with_index(i), cell, if held.is_some() { Sense::DRAG } else { Sense::NONE });
+            let place = Place::Bank(i);
+            drag.slot(ui, place, cell, held.map(|stack| stack.item), &r);
+            slot(ui, cell, *held, pictures, (r.hovered && held.is_some()) || drag.aimed_at(ui, cell), drag.lifted_from(place));
             let Some(stack) = held else { continue };
-            if r.clicked {
+            if r.clicked && !drag.lifted_from(place) {
                 asked = Some(Asked::Take(i));
             }
             if r.hovered {

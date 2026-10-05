@@ -5,6 +5,7 @@ use lntrn_ui::{Sense, Ui};
 use sim::Sim;
 use sim::items::{SLOTS, Stack};
 
+use crate::drag::{Drag, Place};
 use crate::hud::{ItemPictures, Press, backdrop};
 use crate::tonics;
 
@@ -32,18 +33,20 @@ pub fn cell(ui: &Ui, first: Vec2, i: usize, columns: usize) -> Rect {
 }
 
 /// One slot of a grid of things: its recess, the picture of what it
-/// holds, and an edge round it while the pointer is on that.
-pub fn slot(ui: &mut Ui, cell: Rect, held: Option<Stack>, pictures: &ItemPictures, hovered: bool) {
+/// holds, and an edge round it while it is `lit`: the pointer is on
+/// what it holds, or something carried is over it. What is being
+/// carried off is drawn `faint` where it was.
+pub fn slot(ui: &mut Ui, cell: Rect, held: Option<Stack>, pictures: &ItemPictures, lit: bool, faint: bool) {
     ui.recessed(cell, ui.theme.field);
-    let Some(stack) = held else { return };
-    if hovered {
+    if lit {
         ui.draw.stroke_rect(cell, ui.m.border * 2.0, ui.m.radius, ui.theme.accent);
     }
+    let Some(stack) = held else { return };
     if let Some(image) = pictures.of(stack.item) {
         let room = cell.width() - ui.m.px(PAD) * 0.5;
         let scale = (room / image.width.max(1) as f64).min(room / image.height.max(1) as f64);
         let fitted = Rect::from_center_size(cell.center(), Vec2::new(image.width as f64, image.height as f64) * scale).round();
-        ui.draw.image(fitted, image, 0.0, Color::WHITE);
+        ui.draw.image(fitted, image, 0.0, Color::WHITE.with_alpha(if faint { 0.3 } else { 1.0 }));
     }
 }
 
@@ -55,7 +58,7 @@ pub fn count(ui: &mut Ui, cell: Rect, count: u32) {
     let corner = Rect::new(Vec2::new(cell.min.x, cell.max.y - line), cell.max - Vec2::new(ui.m.px(PAD) * 0.5, 0.0));
     let count = count.to_string();
     ui.text_right(&count, &style, corner.translate(Vec2::new(0.0, ui.m.px(2.0))), Color::rgba(0.0, 0.0, 0.0, 0.85));
-    ui.text_right(&count, &style, corner, ui.theme.text);
+    ui.text_right(&count, &style, corner, Color::WHITE);
 }
 
 /// The line along the bottom of a grid's panel `rect`, where the name
@@ -74,18 +77,21 @@ pub fn size(ui: &Ui) -> Vec2 {
 /// under them the name of what the pointer is on. Gives what a press on
 /// something in it asks for: a plain press on what can be used (gear to
 /// put on, a potion to drink, and at the bank anything at all, to put
-/// in), or a right press on anything.
-pub fn draw(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures, into: f64) -> Option<Press> {
+/// in), or a right press on anything. Anything in it can be carried
+/// off, and anything carried can be put down in it.
+pub fn draw(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures, into: f64, drag: &mut Drag) -> Option<Press> {
     backdrop(ui, rect);
     let first = rect.min + Vec2::splat(ui.m.px(PAD));
     let (mut pressed, mut pointed) = (None, None);
     for (i, held) in sim.inventory.slots().iter().enumerate() {
         let cell = cell(ui, first, i, COLUMNS);
         let usable = held.is_some_and(|stack| sim.banking() || stack.item.slot().is_some() || stack.item.potion().is_some());
-        let r = ui.interact(ui.id("slot").with_index(i), cell, if usable { Sense::CLICK } else { Sense::NONE });
-        slot(ui, cell, *held, pictures, r.hovered);
+        let r = ui.interact(ui.id("slot").with_index(i), cell, if held.is_some() { Sense::DRAG } else { Sense::NONE });
+        let place = Place::Bag(i);
+        drag.slot(ui, place, cell, held.map(|stack| stack.item), &r);
+        slot(ui, cell, *held, pictures, (r.hovered && held.is_some()) || drag.aimed_at(ui, cell), drag.lifted_from(place));
         let Some(stack) = held else { continue };
-        if r.clicked {
+        if r.clicked && usable && !drag.lifted_from(place) {
             pressed = Some(Press::Bag(i));
         }
         if r.hovered {

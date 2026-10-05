@@ -373,12 +373,8 @@ anchor = [4.5, 6]
         for file in files {
             let image = lntrn_image::decode(&std::fs::read(dir.join(file)).expect("the picture is there")).expect("it decodes");
             let rects: Vec<(&str, [u32; 4])> = manifest.sprites.iter().filter(|s| s.file == file).map(|s| (s.name.as_str(), s.rect.unwrap_or([0, 0, image.width, image.height]))).collect();
-            // What is made to join up with its neighbours to either side
-            // runs off its left and right edges on purpose.
-            const JOINS: [&str; 1] = ["fence"];
             for &(name, [x, y, w, h]) in &rects {
-                let sides = (y..y + h).flat_map(|py| [(x, py), (x + w - 1, py)]).filter(|_| !JOINS.contains(&name));
-                let border = (x..x + w).flat_map(|px| [(px, y), (px, y + h - 1)]).chain(sides);
+                let border = (x..x + w).flat_map(|px| [(px, y), (px, y + h - 1)]).chain((y..y + h).flat_map(|py| [(x, py), (x + w - 1, py)]));
                 for (px, py) in border {
                     assert_eq!(image.pixel(px, py)[3], 0, "{name}: something is drawn on its rect's edge at ({px}, {py}) of {file}");
                 }
@@ -405,6 +401,9 @@ anchor = [4.5, 6]
     fn every_anchor_is_at_the_foot_of_its_sprite() {
         let (manifest, dir) = shipped();
         const FLAT: [&str; 2] = ["target_ring", "target_ring_wide"];
+        // A rail that joins a fence to its neighbour is anchored on its
+        // own post's foot, which is at one end of it.
+        const RAILS: [&str; 3] = ["fence_east", "fence_west", "fence_south"];
         for def in &manifest.sprites {
             let [w, h] = match def.rect {
                 Some([_, _, w, h]) => [w as f64, h as f64],
@@ -416,6 +415,10 @@ anchor = [4.5, 6]
             let [ax, ay] = def.anchor;
             if FLAT.contains(&def.name.as_str()) {
                 assert_eq!([ax, ay], [w * 0.5, h * 0.5], "{}: anchored off its middle", def.name);
+                continue;
+            }
+            if RAILS.contains(&def.name.as_str()) {
+                assert!(ax >= 0.0 && ax <= w && ay >= 0.0 && ay <= h && (ax < w * 0.1 || ax > w * 0.9 || ay < h * 0.1), "{}: anchored off its end", def.name);
                 continue;
             }
             assert!(ay > h * 0.5 && ay <= h, "{}: anchor y {ay} is not in the lower half of {h}", def.name);

@@ -281,7 +281,7 @@ impl Game {
             }
             self.sim.make(recipe, count);
         }
-        let asked = bank_panel::draw(ui, self.view, &self.sim, &self.item_pictures);
+        let asked = bank_panel::draw(ui, self.view, &self.sim, &self.item_pictures, &mut self.hud.drag);
         match asked {
             Some(Asked::Take(slot)) => self.take_one(slot),
             Some(Asked::Menu(slot)) => self.menu_wanted = self.bank_menu(slot, pointer),
@@ -295,7 +295,12 @@ impl Game {
             self.sim.talk_on();
             ui.state.request_redraw_after(0.0);
         }
-        if wear.is_some() || asked.is_some() {
+        // What was carried and let go over a slot is put down there.
+        let dropped = self.hud.drag.finish(ui, &self.item_pictures);
+        if let Some((from, to)) = dropped {
+            self.put_down(from, to);
+        }
+        if wear.is_some() || asked.is_some() || dropped.is_some() {
             // What a press changed shows in the next frame.
             ui.state.request_redraw_after(0.0);
         }

@@ -173,5 +173,5 @@ fn the_stations_and_the_tin_rock_are_drawn_and_the_panel_shows_what_things_take(
     assert!(count(&image, open, [0xc9, 0xb6, 0x8a], 2) > 5000, "each on its light plate");
     // What cannot be afforded says so in red; what the smith is not up
     // to names the level.
-    assert!(count(&image, open, [0xff, 0x7a, 0x6b], 12) > 60, "red for what is lacking");
+    assert!(count(&image, open, [0xa3, 0x28, 0x1c], 12) > 60, "red for what is lacking: {}", count(&image, open, [0xa3, 0x28, 0x1c], 12));
 }

@@ -8,13 +8,16 @@ mod atlas;
 mod bag_panel;
 mod bank_panel;
 mod camera;
+mod drag;
 mod editor;
 mod gear_panel;
 mod hotbar;
 mod hud;
+mod look;
 mod making;
 mod palette;
 mod panel;
+mod parchment;
 mod render;
 mod saves;
 mod scene;
@@ -24,12 +27,10 @@ mod tonics;
 mod wear;
 
 use lntrn_app::{AppConfig, run};
-use lntrn_ui::Shell;
-
-use app::{Game, View};
+use app::Game;
 
 fn main() {
     // No title bar: the world has the whole window.
     let config = AppConfig { title: title::GAME_NAME.into(), app_id: app::APP_ID.into(), title_bar: false, ..AppConfig::default() };
-    run(config, Game::new(), Shell::new(View::World));
+    run(config, Game::new(), Game::shell());
 }

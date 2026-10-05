@@ -2,7 +2,7 @@
 
 use sim::{Metal, PersonKind};
 
-use super::frame::{GRASS, body, count, snap};
+use super::frame::{GRASS, INK, body, count, snap};
 use super::play::{pass, playing, screen_of};
 use super::*;
 use crate::scene::{Placed, metal_tint};
@@ -242,7 +242,7 @@ fn a_talk_is_drawn_in_its_box_over_the_world_with_names_over_heads() {
     // The box covers the world under it, and has writing in it.
     let panel = in_the_box(&h, &shell, "talk");
     assert_eq!(count(&image, panel.shrink(4.0), GRASS, 1), 0, "no grass shows through the box");
-    assert!(count(&image, panel, [242, 242, 244], 14) > 1500, "what they say is written in it: {}", count(&image, panel, [242, 242, 244], 14));
+    assert!(count(&image, panel, INK, 14) > 1500, "what they say is written in it: {}", count(&image, panel, INK, 14));
     // The smith in their apron, and the guard in bronze, where they stand.
     let grounds = game.person_grounds();
     let guard = 1 - smith;

@@ -210,3 +210,64 @@ fn what_is_carried_goes_to_the_grave_and_what_is_banked_stays_banked() {
     assert!(!sim.banking(), "and they are no longer at the bank");
     assert_eq!(sim.inventory, Inventory::default());
 }
+
+#[test]
+fn the_bank_is_tidied_by_trading_slots_and_only_at_the_bank() {
+    let mut sim = banking();
+    sim.bank.put(Item::CopperOre, 4);
+    sim.bank.put(Item::TinOre, 2);
+    // Onto an empty slot it simply moves; onto a taken one the two trade.
+    sim.tidy_bank(0, 9);
+    assert_eq!((sim.bank.slots()[0], sim.bank.slots()[9]), (None, Some(Stack { item: Item::CopperOre, count: 4 })));
+    sim.tidy_bank(9, 1);
+    assert_eq!((sim.bank.slots()[1].map(|s| s.item), sim.bank.slots()[9].map(|s| s.item)), (Some(Item::CopperOre), Some(Item::TinOre)));
+    sim.tidy_bank(1, 999);
+    assert_eq!(sim.bank.kinds(), 2, "a slot that is not there changes nothing");
+    sim.leave_bank();
+    sim.tidy_bank(1, 9);
+    assert_eq!(sim.bank.slots()[1].map(|s| s.item), Some(Item::CopperOre), "away from the bank it stays as it was");
+}
+
+#[test]
+fn what_is_dropped_on_the_bank_goes_where_it_was_dropped_unless_its_kind_is_there() {
+    let mut sim = banking();
+    sim.inventory.add(Item::CopperOre, 12);
+    sim.inventory.add(Item::HealingPotion, 2);
+    // A new kind, dropped on a free slot: all of the stack, into that slot.
+    assert_eq!(sim.deposit_into(0, 20), 12);
+    assert_eq!(sim.bank.slots()[20], Some(Stack { item: Item::CopperOre, count: 12 }));
+    assert_eq!(sim.inventory.slots()[0], None);
+    // One potion, dropped on the ore: it cannot go there, so the first free slot.
+    assert_eq!(sim.deposit_into(1, 20), 1);
+    assert_eq!(sim.bank.slots()[0], Some(Stack { item: Item::HealingPotion, count: 1 }));
+    assert_eq!(sim.inventory.count(Item::HealingPotion), 1, "only the one that was carried went");
+    // The other, dropped anywhere: onto the stack its kind already has.
+    assert_eq!(sim.deposit_into(2, 33), 1);
+    assert_eq!((sim.bank.slots()[0].map(|s| s.count), sim.bank.slots()[33]), (Some(2), None));
+    assert_eq!(sim.deposit_into(5, 40), 0, "an empty slot of the bag has nothing to give");
+}
+
+#[test]
+fn what_is_dropped_on_the_bag_goes_where_it_was_dropped_when_that_is_free() {
+    let mut sim = banking();
+    sim.bank.put(Item::CopperOre, 30);
+    sim.bank.put(Item::HealingPotion, 3);
+    sim.inventory.add(Item::TinOre, 1);
+    // A stack, onto a free slot of the bag: all of it, there.
+    assert_eq!(sim.withdraw_into(0, 7), 30);
+    assert_eq!(sim.inventory.slots()[7], Some(Stack { item: Item::CopperOre, count: 30 }));
+    // Potions: the first where it was dropped, the rest wherever there is room.
+    assert_eq!(sim.withdraw_into(1, 12), 3);
+    assert_eq!(sim.inventory.slots()[12], Some(Stack { item: Item::HealingPotion, count: 1 }));
+    assert_eq!(sim.inventory.count(Item::HealingPotion), 3);
+    assert!(sim.bank.is_empty());
+    // More of what is already carried goes onto its stack, wherever it was dropped;
+    // and dropped on a slot that is taken, things go where there is room.
+    sim.bank.put(Item::CopperOre, 5);
+    sim.bank.put(Item::BronzeSword, 1);
+    assert_eq!(sim.withdraw_into(0, 20), 5);
+    assert_eq!((sim.inventory.slots()[7].map(|s| s.count), sim.inventory.slots()[20]), (Some(35), None));
+    assert_eq!(sim.withdraw_into(1, 7), 1);
+    assert_eq!((sim.inventory.slots()[7].map(|s| s.item), sim.inventory.count(Item::BronzeSword)), (Some(Item::CopperOre), 1));
+    assert!(sim.take_events().is_empty());
+}

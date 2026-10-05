@@ -26,7 +26,7 @@ const COUNTS: [(u32, &str); 3] = [(1, "1"), (5, "5"), (u32::MAX, "All")];
 const LAYER: usize = 1;
 
 /// What there is not enough of, or not the level for.
-const LACKING: Color = Color::hex(0xff7a6b);
+const LACKING: Color = Color::hex(0xa3281c);
 
 /// Where the panel is in the world's area `view`, for a station with
 /// `rows` things to make: on the left, up the middle.

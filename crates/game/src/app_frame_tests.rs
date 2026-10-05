@@ -67,6 +67,8 @@ pub(super) fn near(got: [u8; 3], want: [u8; 3], tolerance: u8) -> bool {
 }
 
 pub(super) const GRASS: [u8; 3] = [0x73, 0xa1, 0x4c];
+/// The interface's ink: what its writing is the colour of.
+pub(super) const INK: [u8; 3] = [0x2e, 0x20, 0x14];
 const COPPER: [u8; 3] = [0xc7, 0x82, 0x46];
 
 /// How many pixels inside `rect` are within `tolerance` of a colour.
@@ -187,7 +189,7 @@ fn the_name_dialog_is_drawn_over_the_title_screen() {
     turn(&mut h, &mut shell, &mut game);
     assert!(shell.popup_open());
     let Some(image) = snap("frame-name", &mut h, &mut shell, &mut game) else { return };
-    // Something light (the dialog's text) is drawn in the middle of the window.
+    // The dialog's writing, in ink, is in the middle of the window.
     let middle = Rect::from_center_size(WINDOW * 0.5, Vec2::new(700.0, 300.0));
-    assert!(count(&image, middle, [242, 242, 244], 12) > 200, "the dialog's text");
+    assert!(count(&image, middle, INK, 12) > 200, "the dialog's text: {}", count(&image, middle, INK, 12));
 }

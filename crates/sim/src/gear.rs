@@ -173,6 +173,26 @@ impl Sim {
     }
 }
 
+impl Sim {
+    /// Take off what is worn in a slot, into slot `into` of the bag,
+    /// where the player dropped it: if that is empty it goes there, and
+    /// if it holds something worn in the same slot the two trade
+    /// places. Dropped on anything else, it goes wherever there is room.
+    pub fn unequip_into(&mut self, slot: Slot, into: usize) {
+        let Some(item) = self.gear.worn(slot) else {
+            return;
+        };
+        match self.inventory.slots().get(into).copied() {
+            Some(None) => {
+                self.gear.set(slot, None);
+                self.inventory.set_slot(into, Some(Stack { item, count: 1 }));
+            }
+            Some(Some(held)) if held.item.slot() == Some(slot) => self.equip(into),
+            _ => self.unequip(slot),
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "gear_tests.rs"]
 mod tests;

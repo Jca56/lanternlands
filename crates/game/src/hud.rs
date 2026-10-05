@@ -6,6 +6,7 @@ use lntrn_math::{Color, Rect, Vec2};
 use lntrn_ui::{ImageHandle, Ui};
 use sim::{Event, Item, Sim, Skill, Slot, Who};
 
+use crate::drag::Drag;
 use crate::{bag_panel, gear_panel, hotbar, tonics};
 
 /// Sizes in logical pixels.
@@ -108,6 +109,8 @@ pub struct Hud {
     pub bag_open: bool,
     pub skills_open: bool,
     pub gear_open: bool,
+    /// What is being carried from slot to slot with the pointer.
+    pub drag: Drag,
     drops: Vec<Line>,
     messages: Vec<Line>,
 }
@@ -251,7 +254,7 @@ impl Hud {
         if self.bag_open {
             let size = bag_panel::size(ui);
             let rect = stand(right, size.x)(size);
-            ui.child(rect, LAYER, |ui| wear = bag_panel::draw(ui, rect, sim, pictures, sight.into));
+            ui.child(rect, LAYER, |ui| wear = bag_panel::draw(ui, rect, sim, pictures, sight.into, &mut self.drag));
             right = rect.min.x - gap;
         }
         if self.skills_open {
@@ -273,7 +276,7 @@ impl Hud {
             let rect = stand(right, size.x)(size);
             ui.child(rect, LAYER, |ui| {
                 backdrop(ui, rect);
-                wear = gear_panel::draw(ui, rect, sim, pictures).or(wear);
+                wear = gear_panel::draw(ui, rect, sim, pictures, &mut self.drag).or(wear);
             });
         }
         wear

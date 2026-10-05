@@ -48,8 +48,15 @@ impl Bank {
     /// slot when it is a new kind. Gives how many did not go in: all of
     /// them, when it is a new kind and every slot is taken.
     pub fn put(&mut self, item: Item, count: u32) -> u32 {
+        self.put_at(usize::MAX, item, count)
+    }
+
+    /// The same, but a new kind goes into slot `wanted` if that is
+    /// free: where the player dropped it.
+    pub fn put_at(&mut self, wanted: usize, item: Item, count: u32) -> u32 {
         let held = self.slots.iter().position(|s| s.is_some_and(|s| s.item == item));
-        let Some(slot) = held.or_else(|| self.slots.iter().position(Option::is_none)) else {
+        let free = || Some(wanted).filter(|&slot| self.slots.get(slot).is_some_and(Option::is_none)).or_else(|| self.slots.iter().position(Option::is_none));
+        let Some(slot) = held.or_else(free) else {
             return count;
         };
         let before = self.slots[slot].map_or(0, |s| s.count);
@@ -68,6 +75,13 @@ impl Bank {
         let taken = stack.count.min(count);
         self.slots[slot] = Some(Stack { count: stack.count - taken, ..stack }).filter(|s| s.count > 0);
         taken
+    }
+
+    /// Trade what two slots hold: how the player tidies the bank.
+    pub fn swap(&mut self, a: usize, b: usize) {
+        if a < SLOTS && b < SLOTS {
+            self.slots.swap(a, b);
+        }
     }
 
     /// Make a slot hold exactly `stack`: for a bank read back from its
@@ -106,11 +120,23 @@ impl Sim {
     /// from that slot first, then from wherever else in the bag there is
     /// more of it. Gives how many went. Away from the bank, none do.
     pub fn deposit(&mut self, slot: usize, count: u32) -> u32 {
+        self.deposit_at(slot, count, usize::MAX)
+    }
+
+    /// Put all of what a slot of the bag holds into the bank: a new kind
+    /// into slot `into` of the bank if that is free, where the player
+    /// dropped it. Gives how many went.
+    pub fn deposit_into(&mut self, slot: usize, into: usize) -> u32 {
+        let count = self.inventory.slots().get(slot).copied().flatten().map_or(0, |stack| stack.count);
+        self.deposit_at(slot, count, into)
+    }
+
+    fn deposit_at(&mut self, slot: usize, count: u32, into: usize) -> u32 {
         let Some(stack) = self.inventory.slots().get(slot).copied().flatten().filter(|_| self.banking()) else {
             return 0;
         };
         let wanted = count.min(self.inventory.count(stack.item));
-        let moved = wanted - self.bank.put(stack.item, wanted);
+        let moved = wanted - self.bank.put_at(into, stack.item, wanted);
         let here = stack.count.min(moved);
         self.inventory.set_slot(slot, Some(Stack { count: stack.count - here, ..stack }).filter(|s| s.count > 0));
         self.inventory.take(stack.item, moved - here);
@@ -139,11 +165,38 @@ impl Sim {
     /// as many as there is room for. Gives how many came. Away from the
     /// bank, none do.
     pub fn withdraw(&mut self, slot: usize, count: u32) -> u32 {
+        self.withdraw_at(slot, count, usize::MAX)
+    }
+
+    /// Take all of what a slot of the bank holds into the bag, as much
+    /// as there is room for: into slot `into` of the bag first, if that
+    /// is free and it does not go onto a stack already carried. Gives
+    /// how many came.
+    pub fn withdraw_into(&mut self, slot: usize, into: usize) -> u32 {
+        self.withdraw_at(slot, u32::MAX, into)
+    }
+
+    /// Trade what two slots of the bank hold. Away from the bank,
+    /// nothing happens.
+    pub fn tidy_bank(&mut self, a: usize, b: usize) {
+        if self.banking() {
+            self.bank.swap(a, b);
+        }
+    }
+
+    fn withdraw_at(&mut self, slot: usize, count: u32, into: usize) -> u32 {
         let Some(stack) = self.bank.slots().get(slot).copied().flatten().filter(|_| self.banking()) else {
             return 0;
         };
         let wanted = count.min(stack.count);
-        let moved = wanted - self.inventory.add(stack.item, wanted);
+        // The first of them where the player dropped it, when that
+        // starts a new stack (or is a thing that never stacks).
+        let fresh = !stack.item.stacks() || self.inventory.count(stack.item) == 0;
+        let here = if fresh && wanted > 0 && self.inventory.slots().get(into).is_some_and(Option::is_none) { if stack.item.stacks() { wanted } else { 1 } } else { 0 };
+        if here > 0 {
+            self.inventory.set_slot(into, Some(Stack { item: stack.item, count: here }));
+        }
+        let moved = wanted - self.inventory.add(stack.item, wanted - here);
         self.bank.take(slot, moved);
         if moved < wanted {
             self.events.push(Event::InventoryFull);

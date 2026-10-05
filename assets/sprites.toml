@@ -120,8 +120,7 @@ anchor = [120, 206]
 file = "sprites/bank-chest.png"
 anchor = [120, 186]
 
-# Scenery for a village. A fence piece is exactly a tile wide, with its
-# rails running off both edges, so pieces side by side join up.
+# Scenery for a village.
 [sprites.crates]
 file = "sprites/crates.png"
 anchor = [125, 208]
@@ -138,9 +137,30 @@ anchor = [120, 268]
 file = "sprites/well.png"
 anchor = [130, 268]
 
+# A fence is a post, and rails drawn behind it to whichever of its
+# neighbours are fences too: to the east, to the west, and down the
+# screen to the south (the fence to the north reaches down to this
+# one). Each rail's anchor is its own post's foot, and it runs a few
+# pixels past the edge of the tile, so that two meeting never gap.
 [sprites.fence]
 file = "sprites/fence.png"
-anchor = [100, 144]
+rect = [0, 0, 100, 150]
+anchor = [50, 130]
+
+[sprites.fence_east]
+file = "sprites/fence.png"
+rect = [110, 0, 110, 102]
+anchor = [3, 99]
+
+[sprites.fence_west]
+file = "sprites/fence.png"
+rect = [230, 0, 110, 102]
+anchor = [107, 99]
+
+[sprites.fence_south]
+file = "sprites/fence.png"
+rect = [350, 0, 38, 102]
+anchor = [19, 3]
 
 # A herb that has been picked, until it grows back.
 [sprites.herb_picked]

@@ -8,6 +8,7 @@ use lntrn_ui::{ContextMenu, Item as Row};
 use sim::{Skill, Slot};
 
 use super::*;
+use crate::drag::Place;
 
 const WALK: &str = "menu.walk";
 const USE: &str = "menu.use";
@@ -211,6 +212,25 @@ impl Game {
             self.sim.deposit(moved.slot, count);
         } else {
             self.sim.withdraw(moved.slot, count);
+        }
+        self.autosave();
+    }
+
+    /// Put down what was carried from one slot and let go over another:
+    /// within the bag or the bank, the two slots trade; between them,
+    /// the whole of what was carried goes across; gear dropped on what
+    /// is worn goes on, and what is worn dropped on the bag comes off.
+    pub(super) fn put_down(&mut self, from: Place, to: Place) {
+        let sim = &mut self.sim;
+        match (from, to) {
+            (Place::Bag(a), Place::Bag(b)) => sim.inventory.swap(a, b),
+            (Place::Bank(a), Place::Bank(b)) => sim.tidy_bank(a, b),
+            (Place::Bag(a), Place::Bank(b)) => drop(sim.deposit_into(a, b)),
+            (Place::Bank(a), Place::Bag(b)) => drop(sim.withdraw_into(a, b)),
+            // Let go over any slot of the gear, it goes on where it belongs.
+            (Place::Bag(a), Place::Worn(_)) => sim.equip(a),
+            (Place::Worn(slot), Place::Bag(b)) => sim.unequip_into(slot, b),
+            (Place::Worn(_), _) | (Place::Bank(_), Place::Worn(_)) => return,
         }
         self.autosave();
     }

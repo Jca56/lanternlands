@@ -3,7 +3,7 @@
 use sim::{PersonKind, Slot};
 
 use super::fights::{body_of, until, with_goblin};
-use super::frame::{GRASS, body, count, snap};
+use super::frame::{GRASS, INK, body, count, snap};
 use super::people::with_person;
 use super::play::{pass, playing, press_tile, screen_of};
 use super::*;
@@ -13,7 +13,7 @@ const COPPER: [u8; 3] = [0xc7, 0x82, 0x46];
 
 /// The game with a bank chest two tiles east of the player, who has
 /// walked up to it: the bank is open.
-fn at_the_bank(name: &str) -> (Harness, Shell<Game>, Game, (i32, i32)) {
+pub(super) fn at_the_bank(name: &str) -> (Harness, Shell<Game>, Game, (i32, i32)) {
     let (mut h, mut shell, mut game) = playing(name);
     game.sim.monsters.clear();
     let (x, y) = game.sim.player.tile;
@@ -27,11 +27,11 @@ fn at_the_bank(name: &str) -> (Harness, Shell<Game>, Game, (i32, i32)) {
     (h, shell, game, chest)
 }
 
-fn bag_slot(h: &Harness, shell: &Shell<Game>, slot: usize) -> Vec2 {
+pub(super) fn bag_slot(h: &Harness, shell: &Shell<Game>, slot: usize) -> Vec2 {
     h.rect_of(body(shell, View::World).with("slot").with_index(slot)).expect("a slot of the bag").center()
 }
 
-fn bank_slot(h: &Harness, shell: &Shell<Game>, slot: usize) -> Rect {
+pub(super) fn bank_slot(h: &Harness, shell: &Shell<Game>, slot: usize) -> Rect {
     h.rect_of(body(shell, View::World).with("banked").with_index(slot)).expect("a slot of the bank")
 }
 
@@ -251,7 +251,7 @@ fn the_bank_and_a_menu_are_drawn_over_the_world() {
     let Some(image) = snap("frame-bank-menu", &mut h, &mut shell, &mut game) else { return };
     let row = menu_row(&h, "Take all out").expect("the last row");
     let rows = Rect::from_center_size(row, Vec2::new(200.0, 40.0));
-    assert!(count(&image, rows, [242, 242, 244], 14) > 100, "the row's words: {}", count(&image, rows, [242, 242, 244], 14));
+    assert!(count(&image, rows, INK, 14) > 100, "the row's words: {}", count(&image, rows, INK, 14));
 }
 
 #[test]
@@ -259,7 +259,9 @@ fn the_chest_and_the_village_scenery_stand_in_the_world_and_are_in_the_way() {
     let (mut h, mut shell, mut game) = playing("frame_village");
     game.sim.monsters.clear();
     let (x, y) = game.sim.player.tile;
-    let props = [(PropKind::BankChest, (x - 3, y - 1)), (PropKind::Crates, (x - 1, y - 2)), (PropKind::Barrel, (x + 1, y - 2)), (PropKind::Signpost, (x + 3, y - 1)), (PropKind::Well, (x + 3, y + 2)), (PropKind::Fence, (x - 2, y + 2)), (PropKind::Fence, (x - 1, y + 2)), (PropKind::Fence, (x, y + 2))];
+    // The fences make a corner: three along, and two more down from the
+    // west end.
+    let props = [(PropKind::BankChest, (x - 3, y - 1)), (PropKind::Crates, (x - 1, y - 2)), (PropKind::Barrel, (x + 1, y - 2)), (PropKind::Signpost, (x + 3, y - 1)), (PropKind::Well, (x + 3, y + 2)), (PropKind::Fence, (x - 2, y + 1)), (PropKind::Fence, (x - 1, y + 1)), (PropKind::Fence, (x, y + 1)), (PropKind::Fence, (x - 2, y + 2)), (PropKind::Fence, (x - 2, y + 3))];
     for (kind, (px, py)) in props {
         game.sim.world.remove_prop(px, py);
         assert!(game.sim.world.place_prop(kind, px, py), "{kind:?}");
@@ -270,16 +272,25 @@ fn the_chest_and_the_village_scenery_stand_in_the_world_and_are_in_the_way() {
     let Some(image) = snap("frame-village", &mut h, &mut shell, &mut game) else { return };
     let px = game.camera.tile_px(game.scale);
     for (kind, tile) in props {
-        // Something other than grass is drawn where each stands.
+        // Something other than grass is drawn where each stands: most
+        // of the tile, or for a fence, at least its post.
         let at = Rect::from_center_size(screen_of(&game, tile) - Vec2::new(0.0, px * 0.3), Vec2::new(px * 0.8, px * 0.8));
-        assert!(count(&image, at, GRASS, 1) < (at.area() * 0.6) as usize, "{kind:?} is drawn: {} of {}", count(&image, at, GRASS, 1), at.area());
+        let bare = if kind == PropKind::Fence { 0.92 } else { 0.6 };
+        assert!(count(&image, at, GRASS, 1) < (at.area() * bare) as usize, "{kind:?} is drawn: {} of {}", count(&image, at, GRASS, 1), at.area());
     }
-    // Fence pieces side by side join: the rail runs unbroken across the
-    // line between two tiles.
+    // Fences side by side join: the rails run unbroken across the line
+    // between two tiles. And one above another joins too: a rail runs
+    // down the screen between their posts.
     const RAIL: [u8; 3] = [0x86, 0x60, 0x39];
-    let seam = screen_of(&game, (x - 1, y + 2)) - Vec2::new(px * 0.5, 0.0);
-    let across = Rect::from_center_size(seam - Vec2::new(0.0, px * 0.4), Vec2::new(6.0, px * 0.5));
+    let seam = screen_of(&game, (x - 1, y + 1)) - Vec2::new(px * 0.5, 0.0);
+    let across = Rect::from_center_size(seam - Vec2::new(0.0, px * 0.3), Vec2::new(6.0, px * 0.5));
     assert!(count(&image, across, RAIL, 4) > 30, "the rails cross the seam: {}", count(&image, across, RAIL, 4));
+    // (Looked for between the upper post's foot and the lower one's top.)
+    let between = Rect::from_center_size(screen_of(&game, (x - 2, y + 2)) - Vec2::new(0.0, px * 0.78), Vec2::new(px * 0.3, 10.0));
+    assert!(count(&image, between, RAIL, 4) > 30, "a rail runs down between the posts: {}", count(&image, between, RAIL, 4));
+    // Out past the end of the run there is no rail: it stops at its post.
+    let past = Rect::from_center_size(screen_of(&game, (x + 1, y + 1)) - Vec2::new(0.0, px * 0.3), Vec2::new(px * 0.6, px * 0.5));
+    assert_eq!(count(&image, past, RAIL, 4), 0, "nothing sticks out past the last post");
 }
 
 #[test]

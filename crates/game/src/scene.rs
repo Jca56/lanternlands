@@ -8,11 +8,11 @@
 use lntrn_core::impl_pod;
 use lntrn_math::Vec2;
 use sim::noise::unit;
-use sim::{Metal, PersonKind, PropKind, Slot, Terrain, World};
+use sim::{PropKind, Terrain, World};
 
-use crate::anim::WalkSprites;
 use crate::assets::{SpriteId, SpriteSet};
 use crate::camera::Camera;
+pub use crate::look::{GEAR_ORDER, GearSprites, Look, metal_tint};
 
 /// How many grass tiles in a hundred grow a tuft, and how far from the
 /// middle of its tile one may stand (well inside the round a lone tile
@@ -71,117 +71,6 @@ pub struct Placed {
     pub tint: [f32; 4],
 }
 
-/// Which sprite each thing in the world is drawn with.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Look {
-    /// What each kind of prop is drawn with, in the order of
-    /// `PropKind::ALL`: the sprite called what the kind is.
-    props: [Option<SpriteId>; PropKind::ALL.len()],
-    /// A rock and a herb that have given all they had.
-    rock_spent: Option<SpriteId>,
-    herb_picked: Option<SpriteId>,
-    tuft: Option<SpriteId>,
-    /// What marks where the player died.
-    pub gravestone: Option<SpriteId>,
-    /// The ring on the ground under what the player is set on, and a
-    /// wider one for under what is wider than a tile.
-    pub target_ring: Option<SpriteId>,
-    pub target_ring_wide: Option<SpriteId>,
-    pub player: WalkSprites,
-    pub goblin: WalkSprites,
-    /// What each person is drawn with, in the order of `PersonKind::ALL`.
-    people: [WalkSprites; PersonKind::ALL.len()],
-    /// What gear is drawn with, slot by slot.
-    gear: [GearSprites; Slot::ALL.len()],
-}
-
-/// The drawings of what is worn in one slot, laid out like the player's
-/// own: what goes over the body, and what shows from behind it.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct GearSprites {
-    pub over: WalkSprites,
-    pub under: WalkSprites,
-}
-
-/// The order gear is drawn in over the body, bottom first.
-pub const GEAR_ORDER: [Slot; 7] = [Slot::Legs, Slot::Feet, Slot::Body, Slot::Hands, Slot::Head, Slot::Shield, Slot::Weapon];
-
-/// The colour gear's plain greys are multiplied by: its metal's.
-pub const fn metal_tint(metal: Metal) -> [f32; 4] {
-    match metal {
-        Metal::Bronze => [0.878, 0.627, 0.353, 1.0],
-    }
-}
-
-/// The name of a person's sheet in the assets.
-fn person_sheet(kind: PersonKind) -> String {
-    format!("person_{}", kind.name())
-}
-
-impl Look {
-    pub fn find(set: &SpriteSet) -> Look {
-        Look {
-            props: PropKind::ALL.map(|kind| set.id(kind.name())),
-            rock_spent: set.id("rock_spent"),
-            herb_picked: set.id("herb_picked"),
-            tuft: set.id("tuft"),
-            gravestone: set.id("gravestone"),
-            target_ring: set.id("target_ring"),
-            target_ring_wide: set.id("target_ring_wide"),
-            player: WalkSprites::find(set, "player"),
-            goblin: WalkSprites::find(set, "goblin"),
-            people: PersonKind::ALL.map(|kind| WalkSprites::find(set, &person_sheet(kind))),
-            gear: Slot::ALL.map(|slot| GearSprites { over: WalkSprites::find(set, &format!("gear_{}", slot.name())), under: WalkSprites::find(set, &format!("gear_{}_under", slot.name())) }),
-        }
-    }
-
-    /// The names of the sprites it looked for and did not find.
-    pub fn missing(&self) -> Vec<String> {
-        let props = PropKind::ALL.into_iter().zip(self.props).map(|(kind, id)| (kind.name(), id));
-        let all = props.chain([("rock_spent", self.rock_spent), ("herb_picked", self.herb_picked), ("tuft", self.tuft), ("gravestone", self.gravestone), ("target_ring", self.target_ring), ("target_ring_wide", self.target_ring_wide)]);
-        let people = PersonKind::ALL.into_iter().zip(&self.people).flat_map(|(kind, sprites)| sprites.missing(&person_sheet(kind)));
-        all.filter(|(_, id)| id.is_none()).map(|(name, _)| name.to_owned()).chain(self.player.missing("player")).chain(self.goblin.missing("goblin")).chain(people).collect()
-    }
-
-    /// The sprite a prop is drawn with once it has given all it had.
-    fn spent(&self, kind: PropKind) -> Option<SpriteId> {
-        match kind {
-            PropKind::Rock | PropKind::TinRock => self.rock_spent,
-            PropKind::HerbPurple | PropKind::HerbCyan => self.herb_picked,
-            _ => None,
-        }
-    }
-
-    /// The ring that lies under a kind of prop: the wide one under what
-    /// is drawn wider than a tile, so it shows all round.
-    pub fn ring_under(&self, set: &SpriteSet, kind: PropKind) -> Option<SpriteId> {
-        let wide = self.prop(kind).is_some_and(|id| set.get(id).size.x > 1.0);
-        self.target_ring_wide.filter(|_| wide).or(self.target_ring)
-    }
-
-    /// The drawings of what is worn in a slot.
-    pub fn gear(&self, slot: Slot) -> &GearSprites {
-        &self.gear[Slot::ALL.iter().position(|s| *s == slot).expect("every slot is listed")]
-    }
-
-    /// The drawings a person is shown with.
-    pub fn person(&self, kind: PersonKind) -> &WalkSprites {
-        &self.people[PersonKind::ALL.iter().position(|k| *k == kind).expect("everyone is listed")]
-    }
-
-    /// The drawings a kind of monster is shown with.
-    pub fn monster(&self, kind: sim::MonsterKind) -> &WalkSprites {
-        match kind {
-            sim::MonsterKind::Goblin => &self.goblin,
-        }
-    }
-
-    /// The sprite a kind of prop is drawn with, if the assets have it.
-    pub fn prop(&self, kind: PropKind) -> Option<SpriteId> {
-        self.props[PropKind::ALL.iter().position(|k| *k == kind).expect("every kind is listed")]
-    }
-}
-
 #[derive(Default)]
 pub struct Scene {
     /// The tile every instance's position is counted from: the one the
@@ -230,8 +119,18 @@ impl Scene {
         let (y0, y1) = (seen.min.y.floor() as i32 - 1, seen.max.y.floor() as i32 + 4);
         for prop in world.props_in(x0, y0, x1, y1) {
             let drawn = look.spent(prop.kind).filter(|_| spent(prop.x, prop.y)).or(look.prop(prop.kind));
+            let ground = Vec2::new(prop.x as f64 + 0.5, prop.y as f64 + 0.5);
+            if prop.kind == PropKind::Fence {
+                // Its rails first, so they run behind its post: to
+                // whichever of its neighbours are fences too.
+                let joined = |dx: i32, dy: i32| world.prop_at(prop.x + dx, prop.y + dy).is_some_and(|p| p.kind == PropKind::Fence);
+                for (rail, there) in [(look.fence_south, joined(0, 1)), (look.fence_east, joined(1, 0)), (look.fence_west, joined(-1, 0))] {
+                    if let Some(id) = rail.filter(|_| there) {
+                        self.stand(set, id, ground, origin, false, [1.0; 4]);
+                    }
+                }
+            }
             if let Some(id) = drawn {
-                let ground = Vec2::new(prop.x as f64 + 0.5, prop.y as f64 + 0.5);
                 self.stand(set, id, ground, origin, false, [1.0; 4]);
             }
         }
@@ -275,6 +174,8 @@ fn tuft(world: &World, x: i32, y: i32) -> Option<Vec2> {
 
 #[cfg(test)]
 mod tests {
+    use sim::PersonKind;
+
     use super::*;
     use Terrain::{Dirt, Grass, Sand, Water};
 
@@ -341,10 +242,10 @@ mod tests {
     #[test]
     fn every_sprite_the_scene_asks_for_is_in_the_assets() {
         assert_eq!(Look::find(&set()).missing(), Vec::<String>::new());
-        // With no assets: one for every kind of prop and six more of the
+        // With no assets: one for every kind of prop and nine more of the
         // map's, and eighteen each for the player, the goblin and every
         // person.
-        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), PropKind::ALL.len() + 6 + 18 * (2 + PersonKind::ALL.len()));
+        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), PropKind::ALL.len() + 9 + 18 * (2 + PersonKind::ALL.len()));
     }
 
     #[test]
@@ -438,6 +339,40 @@ mod tests {
         assert_eq!(after.len(), before.len());
         // Asked of a tree, it changes nothing: a tree is no node.
         assert_eq!(drawn(&|_, _| true).iter().filter(|s| s.uv == set.get(look.prop(PropKind::Tree).unwrap()).uv).count(), before.iter().filter(|s| s.uv == set.get(look.prop(PropKind::Tree).unwrap()).uv).count());
+    }
+
+    #[test]
+    fn a_fence_reaches_to_the_fences_beside_and_below_it_and_no_further() {
+        let set = set();
+        let look = Look::find(&set);
+        // A corner: a run of three along the top, and one hanging off
+        // its west end.
+        //   F F F
+        //   F
+        let mut world = World::new();
+        for (x, y) in (0..6).flat_map(|x| (0..6).map(move |y| (x, y))) {
+            world.set_terrain(x, y, Terrain::Grass);
+        }
+        for (x, y) in [(1, 1), (2, 1), (3, 1), (1, 2)] {
+            world.place_prop(PropKind::Fence, x, y);
+        }
+        world.place_prop(PropKind::Barrel, 4, 1);
+        let mut scene = Scene::default();
+        scene.build(&world, &Camera::new(Vec2::new(3.0, 3.0)), Vec2::new(800.0, 800.0), 1.0, &set, &look, &[], &|_, _| false);
+        let count = |id: Option<SpriteId>| scene.sprites.iter().filter(|s| s.uv == set.get(id.expect("in the assets")).uv).count();
+        assert_eq!(count(look.prop(PropKind::Fence)), 4, "a post for every fence");
+        assert_eq!(count(look.fence_east), 2, "east from the first two of the run: the barrel is no fence");
+        assert_eq!(count(look.fence_west), 2, "west from the last two");
+        assert_eq!(count(look.fence_south), 1, "down from the corner to the one below it");
+        // A rail is behind its own post: it comes before it in the list.
+        let place = |id: Option<SpriteId>| scene.sprites.iter().position(|s| s.uv == set.get(id.unwrap()).uv).unwrap();
+        assert!(place(look.fence_south) < place(look.prop(PropKind::Fence)) && place(look.fence_east) < place(look.prop(PropKind::Fence)));
+        // And a fence all alone is just its post.
+        world.remove_prop(2, 1);
+        world.remove_prop(1, 2);
+        scene.build(&world, &Camera::new(Vec2::new(3.0, 3.0)), Vec2::new(800.0, 800.0), 1.0, &set, &look, &[], &|_, _| false);
+        let count = |id: Option<SpriteId>| scene.sprites.iter().filter(|s| s.uv == set.get(id.unwrap()).uv).count();
+        assert_eq!((count(look.prop(PropKind::Fence)), count(look.fence_east), count(look.fence_west), count(look.fence_south)), (2, 0, 0, 0));
     }
 
     #[test]

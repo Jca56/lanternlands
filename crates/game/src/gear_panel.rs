@@ -6,6 +6,7 @@ use lntrn_math::{Color, Rect, Vec2};
 use lntrn_ui::{Sense, Ui};
 use sim::{Sim, Slot};
 
+use crate::drag::{Drag, Place};
 use crate::hotbar::PLATE;
 use crate::hud::{ItemPictures, Press};
 
@@ -29,8 +30,9 @@ pub fn size(ui: &Ui) -> Vec2 {
 }
 
 /// Draw the panel in `rect`. Gives what a press on something worn
-/// asked for.
-pub fn draw(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures) -> Option<Press> {
+/// asked for. What is worn can be carried off to the bag, and gear
+/// carried from the bag put on by letting go of it here.
+pub fn draw(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures, drag: &mut Drag) -> Option<Press> {
     let (slot, gap, pad) = (ui.m.px(SLOT), ui.m.px(GAP), ui.m.px(PAD));
     let style = ui.text_style();
     let mut off = None;
@@ -38,20 +40,26 @@ pub fn draw(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures) -> Opti
         let at = rect.min + Vec2::new(pad + column as f64 * (slot + gap), pad + row as f64 * (slot + gap));
         let cell = Rect::from_min_size(at, Vec2::new(slot, slot));
         let worn = sim.gear.worn(place);
-        let r = ui.interact(ui.id("gear").with(place.name()), cell, if worn.is_some() { Sense::CLICK } else { Sense::NONE });
+        let r = ui.interact(ui.id("gear").with(place.name()), cell, if worn.is_some() { Sense::DRAG } else { Sense::NONE });
+        let from = Place::Worn(place);
+        drag.slot(ui, from, cell, worn, &r);
+        let lit = r.hovered || drag.aimed_at(ui, cell);
         let Some(item) = worn else {
             // An empty slot says what goes in it.
             ui.recessed(cell, ui.theme.field);
             ui.text_centered(place.label(), &style, cell, ui.theme.text.with_alpha(0.4));
+            if lit {
+                ui.draw.stroke_rect(cell, ui.m.border * 2.0, ui.m.radius, ui.theme.accent);
+            }
             continue;
         };
         ui.draw.rounded_rect(cell, ui.m.radius, PLATE);
         if let Some(image) = pictures.of(item) {
-            ui.draw.image(cell.shrink(gap), image, 0.0, Color::WHITE);
+            ui.draw.image(cell.shrink(gap), image, 0.0, Color::WHITE.with_alpha(if drag.lifted_from(from) { 0.3 } else { 1.0 }));
         }
-        let edge = if r.hovered { (ui.m.border * 2.0, ui.theme.accent) } else { (ui.m.border.max(2.0), ui.theme.border_dark) };
+        let edge = if lit { (ui.m.border * 2.0, ui.theme.accent) } else { (ui.m.border.max(2.0), ui.theme.border_dark) };
         ui.draw.stroke_rect(cell, edge.0, ui.m.radius, edge.1);
-        if r.clicked {
+        if r.clicked && !drag.lifted_from(from) {
             off = Some(Press::Worn(place));
         } else if r.hovered && ui.state.right_pressed {
             off = Some(Press::WornMenu(place));

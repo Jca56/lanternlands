@@ -173,3 +173,27 @@ fn a_save_with_gear_in_the_wrong_slot_is_refused() {
     let error = Saved::decode(&wrong).expect_err("a sword is not a shield");
     assert!(error.contains("Bronze sword"), "{error}");
 }
+
+#[test]
+fn gear_taken_off_goes_into_the_slot_it_was_dropped_on_or_trades_with_gear_of_its_kind() {
+    let mut sim = Sim::new(crate::world::World::new());
+    sim.inventory.add(Item::BronzeSword, 1);
+    sim.inventory.add(Item::CopperOre, 3);
+    sim.equip(0);
+    assert_eq!(sim.gear.worn(Slot::Weapon), Some(Item::BronzeSword));
+    // Onto an empty slot: there.
+    sim.unequip_into(Slot::Weapon, 9);
+    assert_eq!((sim.gear.worn(Slot::Weapon), sim.inventory.slots()[9].map(|s| s.item)), (None, Some(Item::BronzeSword)));
+    // Onto another weapon: the two trade places.
+    sim.equip(9);
+    sim.inventory.set_slot(4, Some(Stack { item: Item::BronzeSword, count: 1 }));
+    sim.unequip_into(Slot::Weapon, 4);
+    assert_eq!((sim.gear.worn(Slot::Weapon), sim.inventory.slots()[4].map(|s| s.item)), (Some(Item::BronzeSword), Some(Item::BronzeSword)));
+    // Onto ore, or off the end of the bag: wherever there is room.
+    sim.inventory.set_slot(4, None);
+    sim.unequip_into(Slot::Weapon, 1);
+    assert_eq!((sim.gear.worn(Slot::Weapon), sim.inventory.slots()[1].map(|s| s.item), sim.inventory.count(Item::BronzeSword)), (None, Some(Item::CopperOre), 1));
+    // Nothing worn there: nothing happens.
+    sim.unequip_into(Slot::Head, 20);
+    assert_eq!(sim.inventory.slots()[20], None);
+}

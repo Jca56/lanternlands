@@ -27,7 +27,7 @@ impl AppHost for Game {
     }
 
     fn after_rebuild(&mut self, _: &Gpu, _: &mut Images, shell: &mut Shell<Self>) -> bool {
-        self.sync_panel(shell)
+        self.keep_house(shell)
     }
 
     fn exiting(&mut self, _: Exit) {
