@@ -141,3 +141,17 @@ fn the_people_are_saved_with_the_map_and_only_their_chunk_is_rewritten() {
     assert_eq!(back.people(), vec![(PersonKind::Smith, 24, 14), (PersonKind::Guard, 26, 15)]);
     assert_eq!(snapshot(&back), snapshot(&world));
 }
+
+#[test]
+fn the_games_own_map_loads_and_everyone_on_it_has_ground_to_stand_on() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/maps/overworld");
+    let world = World::load(&dir).expect("the shipped map loads");
+    assert!(world.chunk_count() > 0, "there is a map at {}", dir.display());
+    assert!(!world.is_dirty());
+    for (kind, x, y) in world.spawns() {
+        assert!(world.walkable(x, y), "a {} lives at ({x}, {y}), where nothing can stand", kind.name());
+    }
+    for (kind, x, y) in world.people() {
+        assert!(world.walkable(x, y), "the {} lives at ({x}, {y}), where nobody can stand", kind.name());
+    }
+}
