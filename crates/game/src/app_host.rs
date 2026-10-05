@@ -15,6 +15,9 @@ impl AppHost for Game {
         for (slot, image) in self.ability_pictures.0.iter_mut().zip(&self.ability_images) {
             *slot = image.as_ref().map(|image| images.add(gpu, image));
         }
+        for (slot, image) in self.skill_pictures.0.iter_mut().zip(&self.skill_images) {
+            *slot = image.as_ref().map(|image| images.add(gpu, image));
+        }
         for (slot, kind) in self.pictures.monsters.iter_mut().zip(MonsterKind::ALL) {
             let standing = self.look.monster(kind).sprite(Facing::Down, Pose::Idle);
             *slot = standing.map(|(id, _)| images.add(gpu, self.sprites.picture(id)));

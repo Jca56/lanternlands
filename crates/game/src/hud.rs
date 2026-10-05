@@ -4,15 +4,15 @@
 
 use lntrn_math::{Color, Rect, Vec2};
 use lntrn_ui::{ImageHandle, Ui};
-use sim::{Event, Item, Sim, Skill, Slot, Who};
+use sim::{Event, Item, Sim, Slot, Who};
 
 use crate::drag::Drag;
+use crate::skills_panel::{self, SkillPictures};
 use crate::{bag_panel, gear_panel, hotbar, tonics};
 
 /// Sizes in logical pixels.
 const GAP: f64 = 5.0;
 const PAD: f64 = 10.0;
-const SKILLS_WIDTH: f64 = 380.0;
 const BUTTON: Vec2 = Vec2::new(130.0, 55.0);
 /// How far the buttons and panels keep from the window's edge.
 const MARGIN: f64 = 15.0;
@@ -204,7 +204,7 @@ impl Hud {
 
     /// Draw over the world's area `view`. Gives what a press on the bag
     /// or the gear asked for, if one did.
-    pub fn draw(&mut self, ui: &mut Ui, view: Rect, sim: &Sim, pictures: &ItemPictures, sight: &Sight) -> Option<Press> {
+    pub fn draw(&mut self, ui: &mut Ui, view: Rect, sim: &Sim, pictures: &ItemPictures, skills: &SkillPictures, sight: &Sight) -> Option<Press> {
         let now = ui.now();
         self.drops.retain(|d| now - d.born < DROP_LIFE);
         self.messages.retain(|m| now - m.born < MESSAGE_LIFE);
@@ -258,17 +258,9 @@ impl Hud {
             right = rect.min.x - gap;
         }
         if self.skills_open {
-            let rows = Skill::ALL.len() as f64;
-            let size = Vec2::new(px(SKILLS_WIDTH), (m.widget_h + m.gap) * rows - m.gap + px(PAD) * 2.0);
+            let size = skills_panel::size(ui);
             let rect = stand(right, size.x)(size);
-            ui.child(rect, LAYER, |ui| {
-                backdrop(ui, rect);
-                ui.child(rect.shrink(px(PAD)), LAYER, |ui| {
-                    for skill in Skill::ALL {
-                        ui.progress(&format!("{}  {}", skill.label(), sim.skills.level(skill)), sim.skills.progress(skill));
-                    }
-                });
-            });
+            ui.child(rect, LAYER, |ui| skills_panel::draw(ui, rect, sim, skills));
             right = rect.min.x - gap;
         }
         if self.gear_open {
@@ -372,6 +364,8 @@ pub fn backdrop(ui: &mut Ui, rect: Rect) {
 
 #[cfg(test)]
 mod tests {
+    use sim::Skill;
+
     use super::*;
 
     fn quiet() -> Sim {

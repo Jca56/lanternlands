@@ -374,3 +374,6 @@ mod bank;
 
 #[path = "app_drag_tests.rs"]
 mod drags;
+
+#[path = "app_skills_tests.rs"]
+mod skills;

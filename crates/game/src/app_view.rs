@@ -252,7 +252,7 @@ impl Game {
         let monsters = self.monster_grounds();
         talk::draw_names(ui, &self.sim, &self.person_grounds(), &|world| camera.to_screen(world, view, scale));
         let sight = Sight { player: target, to_screen: &|world| camera.to_screen(world, view, scale), monsters: &monsters, tile_px: camera.tile_px(scale), into: self.world_phase / TICK_SECONDS };
-        let wear = self.hud.draw(ui, self.view, &self.sim, &self.item_pictures, &sight);
+        let wear = self.hud.draw(ui, self.view, &self.sim, &self.item_pictures, &self.skill_pictures, &sight);
         let pointer = ui.state.pointer;
         match wear {
             // At the bank a press on the bag puts one in; anywhere else

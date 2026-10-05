@@ -21,6 +21,7 @@ mod parchment;
 mod render;
 mod saves;
 mod scene;
+mod skills_panel;
 mod talk;
 mod title;
 mod tonics;

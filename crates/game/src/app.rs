@@ -12,7 +12,7 @@ use lntrn_ui::keymap::CTX_WINDOW;
 use lntrn_ui::{Action, AreaCx, Axis, ContextMenu, Dialog, Host, HostCx, Key, KeyConfig, KeyItem, KeyPress, Modifiers, Shell, ShellRequest, Trigger, Ui};
 use lntrn_image::Image;
 use lntrn_ui::ImageHandle;
-use sim::{Ability, Character, Item, MonsterKind, PersonKind, PropKind, Sim, TICK_SECONDS, World};
+use sim::{Ability, Character, Item, MonsterKind, PersonKind, PropKind, Sim, Skill, TICK_SECONDS, World};
 
 use crate::anim::{Facing, Pose};
 use crate::assets::{self, SpriteSet};
@@ -26,6 +26,7 @@ use crate::render::WorldRenderer;
 use crate::saves::{SLOTS, Saves};
 use crate::title::Slot;
 use crate::scene::{Look, Scene};
+use crate::skills_panel::SkillPictures;
 
 const FULLSCREEN: &str = "game.fullscreen";
 const QUIT: &str = "game.quit";
@@ -131,6 +132,8 @@ pub struct Game {
     item_images: Vec<Option<Image>>,
     item_pictures: ItemPictures,
     ability_images: Vec<Option<Image>>,
+    skill_images: Vec<Option<Image>>,
+    skill_pictures: SkillPictures,
     ability_pictures: AbilityPictures,
     editor: MapEditor,
     pictures: Pictures,
@@ -192,6 +195,7 @@ impl Game {
         };
         let item_images = Item::ALL.map(|item| picture("items", item.name()));
         let ability_images = Ability::ALL.map(|ability| picture("abilities", ability.name()));
+        let skill_images = Skill::ALL.map(|skill| picture("skills", skill.name()));
         let title_path = dir.join(TITLE_PAINTING);
         let title_image = std::fs::read(&title_path).map_err(|e| e.to_string()).and_then(|bytes| lntrn_image::decode(&bytes).map_err(|e| e.to_string()));
         let title_image = title_image.map_err(|e| log_error!("no title painting: {}: {e}", title_path.display())).ok();
@@ -253,6 +257,8 @@ impl Game {
             item_images: item_images.to_vec(),
             item_pictures: ItemPictures::default(),
             ability_images: ability_images.to_vec(),
+            skill_images: skill_images.to_vec(),
+            skill_pictures: SkillPictures::default(),
             ability_pictures: AbilityPictures::default(),
             editor: MapEditor::new(),
             pictures: Pictures::default(),
