@@ -4,7 +4,7 @@
 
 use lntrn_math::Vec2;
 use sim::edit::{self, History};
-use sim::{Marker, MonsterKind, PropKind, Terrain, World};
+use sim::{Marker, MonsterKind, PersonKind, PropKind, Terrain, World};
 
 /// The widest the brush goes, in tiles.
 pub const SIZE_MAX: u32 = 9;
@@ -27,10 +27,12 @@ pub enum Tool {
     Start,
     /// Make a tile the home of a monster.
     Spawn,
+    /// Make a tile the home of a person.
+    Person,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 8] = [Tool::Brush, Tool::Eraser, Tool::Fill, Tool::Place, Tool::Remove, Tool::Move, Tool::Start, Tool::Spawn];
+    pub const ALL: [Tool; 9] = [Tool::Brush, Tool::Eraser, Tool::Fill, Tool::Place, Tool::Remove, Tool::Move, Tool::Start, Tool::Spawn, Tool::Person];
 
     pub const fn label(self) -> &'static str {
         match self {
@@ -42,6 +44,7 @@ impl Tool {
             Tool::Move => "Move",
             Tool::Start => "Start",
             Tool::Spawn => "Spawn",
+            Tool::Person => "Person",
         }
     }
 
@@ -61,6 +64,8 @@ pub struct MapEditor {
     pub prop: PropKind,
     /// What the spawn tool makes a tile the home of.
     pub monster: MonsterKind,
+    /// Who the person tool makes a tile the home of.
+    pub person: PersonKind,
     pub history: History,
     /// Where the stroke under way last touched, in tiles.
     stroke: Option<Vec2>,
@@ -74,7 +79,7 @@ fn tile_under(at: Vec2) -> (i32, i32) {
 
 impl MapEditor {
     pub fn new() -> MapEditor {
-        MapEditor { tool: Tool::Brush, size: 1, terrain: Terrain::Grass, prop: PropKind::Tree, monster: MonsterKind::Goblin, history: History::new(), stroke: None, held: None }
+        MapEditor { tool: Tool::Brush, size: 1, terrain: Terrain::Grass, prop: PropKind::Tree, monster: MonsterKind::Goblin, person: PersonKind::Smith, history: History::new(), stroke: None, held: None }
     }
 
     /// The tiles the held tool would change with the pointer at `at`
@@ -149,14 +154,18 @@ impl MapEditor {
                 edit::place(&mut self.history, world, x, y, self.prop);
             }
             // What stands on the tile goes first; with nothing standing,
-            // a monster's home there does.
+            // whoever lives there does, monster or person.
             Tool::Remove => {
-                if !edit::remove(&mut self.history, world, x, y) && world.spawn_at(x, y).is_some() {
+                if !edit::remove(&mut self.history, world, x, y) {
                     edit::set_spawn(&mut self.history, world, x, y, None);
+                    edit::set_person(&mut self.history, world, x, y, None);
                 }
             }
             Tool::Spawn => {
                 edit::set_spawn(&mut self.history, world, x, y, Some(self.monster));
+            }
+            Tool::Person => {
+                edit::set_person(&mut self.history, world, x, y, Some(self.person));
             }
             Tool::Start => {
                 edit::set_marker(&mut self.history, world, Marker::PlayerStart, x, y);

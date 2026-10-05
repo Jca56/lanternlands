@@ -158,3 +158,27 @@ anchor = [100, 100]
 [sprites.tuft]
 file = "sprites/tuft.png"
 anchor = [24, 32]
+
+# The people of the world, each laid out like the player's own sheet and
+# made from it: the same body in other clothes. What they wear over
+# those (an apron, armour) is the gear above, in other colours.
+[grids.person_smith]
+file = "sprites/person-smith.png"
+cell = [240, 320]
+anchor = [120, 286]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.person_herbalist]
+file = "sprites/person-herbalist.png"
+cell = [240, 320]
+anchor = [120, 286]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.person_guard]
+file = "sprites/person-guard.png"
+cell = [240, 320]
+anchor = [120, 286]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]

@@ -340,3 +340,6 @@ mod gear;
 
 #[path = "app_alchemy_tests.rs"]
 mod alchemy;
+
+#[path = "app_people_tests.rs"]
+mod people;

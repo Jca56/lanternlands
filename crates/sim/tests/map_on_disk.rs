@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use sim::{Marker, PropKind, Terrain, Tile, World};
+use sim::{Marker, PersonKind, PropKind, Terrain, Tile, World};
 
 /// A fresh folder under the build's own scratch space.
 fn folder(name: &str) -> PathBuf {
@@ -51,7 +51,7 @@ fn only_what_changed_is_written() {
     assert_eq!(fs::read(dir.join("1_0.chunk")).unwrap(), untouched);
     let back = World::load(&dir).unwrap();
     assert_eq!(back.tile(3, 3).terrain, Some(Terrain::Water));
-    assert_eq!(back.tile(-1, -40), Tile { terrain: Some(Terrain::Sand), prop: Some(PropKind::Rock), marker: None, spawn: None });
+    assert_eq!(back.tile(-1, -40), Tile { terrain: Some(Terrain::Sand), prop: Some(PropKind::Rock), marker: None, spawn: None, person: None });
 }
 
 #[test]
@@ -128,4 +128,16 @@ fn a_map_with_two_player_starts_is_refused() {
     fs::copy(one.join("0_0.chunk"), two.join("0_0.chunk")).unwrap();
     let why = World::load(&two).err().expect("refused");
     assert!(why.contains("2 player_start markers"), "{why}");
+}
+
+#[test]
+fn the_people_are_saved_with_the_map_and_only_their_chunk_is_rewritten() {
+    let dir = folder("people");
+    let mut world = sim::testmap::build();
+    world.save(&dir).unwrap();
+    assert!(world.set_person(24, 14, Some(PersonKind::Smith)) && world.set_person(26, 15, Some(PersonKind::Guard)));
+    assert_eq!(world.save(&dir), Ok(1));
+    let back = World::load(&dir).unwrap();
+    assert_eq!(back.people(), vec![(PersonKind::Smith, 24, 14), (PersonKind::Guard, 26, 15)]);
+    assert_eq!(snapshot(&back), snapshot(&world));
 }

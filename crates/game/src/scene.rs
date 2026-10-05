@@ -8,7 +8,7 @@
 use lntrn_core::impl_pod;
 use lntrn_math::Vec2;
 use sim::noise::unit;
-use sim::{Metal, PropKind, Slot, Terrain, World};
+use sim::{Metal, PersonKind, PropKind, Slot, Terrain, World};
 
 use crate::anim::WalkSprites;
 use crate::assets::{SpriteId, SpriteSet};
@@ -91,7 +91,9 @@ pub struct Look {
     pub target_ring: Option<SpriteId>,
     pub player: WalkSprites,
     pub goblin: WalkSprites,
-    /// What the player's gear is drawn with, slot by slot.
+    /// What each person is drawn with, in the order of `PersonKind::ALL`.
+    people: [WalkSprites; PersonKind::ALL.len()],
+    /// What gear is drawn with, slot by slot.
     gear: [GearSprites; Slot::ALL.len()],
 }
 
@@ -107,21 +109,27 @@ pub struct GearSprites {
 pub const GEAR_ORDER: [Slot; 7] = [Slot::Legs, Slot::Feet, Slot::Body, Slot::Hands, Slot::Head, Slot::Shield, Slot::Weapon];
 
 /// The colour gear's plain greys are multiplied by: its metal's.
-pub fn metal_tint(metal: Metal) -> [f32; 4] {
+pub const fn metal_tint(metal: Metal) -> [f32; 4] {
     match metal {
         Metal::Bronze => [0.878, 0.627, 0.353, 1.0],
     }
 }
 
+/// The name of a person's sheet in the assets.
+fn person_sheet(kind: PersonKind) -> String {
+    format!("person_{}", kind.name())
+}
+
 impl Look {
     pub fn find(set: &SpriteSet) -> Look {
-        Look { tree: set.id("tree"), rock: set.id("rock"), tin_rock: set.id("tin_rock"), rock_spent: set.id("rock_spent"), furnace: set.id("furnace"), anvil: set.id("anvil"), cauldron: set.id("cauldron"), herb_picked: set.id("herb_picked"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft"), gravestone: set.id("gravestone"), target_ring: set.id("target_ring"), player: WalkSprites::find(set, "player"), goblin: WalkSprites::find(set, "goblin"), gear: Slot::ALL.map(|slot| GearSprites { over: WalkSprites::find(set, &format!("gear_{}", slot.name())), under: WalkSprites::find(set, &format!("gear_{}_under", slot.name())) }) }
+        Look { tree: set.id("tree"), rock: set.id("rock"), tin_rock: set.id("tin_rock"), rock_spent: set.id("rock_spent"), furnace: set.id("furnace"), anvil: set.id("anvil"), cauldron: set.id("cauldron"), herb_picked: set.id("herb_picked"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft"), gravestone: set.id("gravestone"), target_ring: set.id("target_ring"), player: WalkSprites::find(set, "player"), goblin: WalkSprites::find(set, "goblin"), people: PersonKind::ALL.map(|kind| WalkSprites::find(set, &person_sheet(kind))), gear: Slot::ALL.map(|slot| GearSprites { over: WalkSprites::find(set, &format!("gear_{}", slot.name())), under: WalkSprites::find(set, &format!("gear_{}_under", slot.name())) }) }
     }
 
     /// The names of the sprites it looked for and did not find.
     pub fn missing(&self) -> Vec<String> {
         let all = [("tree", self.tree), ("rock", self.rock), ("tin_rock", self.tin_rock), ("rock_spent", self.rock_spent), ("furnace", self.furnace), ("anvil", self.anvil), ("cauldron", self.cauldron), ("herb_picked", self.herb_picked), ("herb_purple", self.herb_purple), ("herb_cyan", self.herb_cyan), ("tuft", self.tuft), ("gravestone", self.gravestone), ("target_ring", self.target_ring)];
-        all.into_iter().filter(|(_, id)| id.is_none()).map(|(name, _)| name.to_owned()).chain(self.player.missing("player")).chain(self.goblin.missing("goblin")).collect()
+        let people = PersonKind::ALL.into_iter().zip(&self.people).flat_map(|(kind, sprites)| sprites.missing(&person_sheet(kind)));
+        all.into_iter().filter(|(_, id)| id.is_none()).map(|(name, _)| name.to_owned()).chain(self.player.missing("player")).chain(self.goblin.missing("goblin")).chain(people).collect()
     }
 
     /// The sprite a prop is drawn with once it has given all it had.
@@ -136,6 +144,11 @@ impl Look {
     /// The drawings of what is worn in a slot.
     pub fn gear(&self, slot: Slot) -> &GearSprites {
         &self.gear[Slot::ALL.iter().position(|s| *s == slot).expect("every slot is listed")]
+    }
+
+    /// The drawings a person is shown with.
+    pub fn person(&self, kind: PersonKind) -> &WalkSprites {
+        &self.people[PersonKind::ALL.iter().position(|k| *k == kind).expect("everyone is listed")]
     }
 
     /// The drawings a kind of monster is shown with.
@@ -320,8 +333,8 @@ mod tests {
     fn every_sprite_the_scene_asks_for_is_in_the_assets() {
         assert_eq!(Look::find(&set()).missing(), Vec::<String>::new());
         // With no assets: the thirteen of the map, and eighteen each
-        // for the player and the goblin.
-        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 49);
+        // for the player, the goblin and every person.
+        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 49 + 18 * PersonKind::ALL.len());
     }
 
     #[test]

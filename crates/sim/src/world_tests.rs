@@ -71,17 +71,17 @@ fn an_empty_world_has_no_bounds() {
 #[test]
 fn set_tile_makes_the_tile_exactly_what_was_asked() {
     let mut world = World::new();
-    let tree_on_grass = Tile { terrain: Some(Terrain::Grass), prop: Some(PropKind::Tree), marker: None, spawn: None };
+    let tree_on_grass = Tile { terrain: Some(Terrain::Grass), prop: Some(PropKind::Tree), marker: None, spawn: None, person: None };
     world.set_tile(2, 2, tree_on_grass);
     assert_eq!(world.tile(2, 2), tree_on_grass);
     // New ground under the same prop, then another prop, then none.
     for prop in [Some(PropKind::Tree), Some(PropKind::Rock), None] {
-        let tile = Tile { terrain: Some(Terrain::Sand), prop, marker: None, spawn: None };
+        let tile = Tile { terrain: Some(Terrain::Sand), prop, marker: None, spawn: None, person: None };
         world.set_tile(2, 2, tile);
         assert_eq!(world.tile(2, 2), tile);
     }
     // No ground: nothing can stand there.
-    world.set_tile(2, 2, Tile { terrain: None, prop: Some(PropKind::Tree), marker: Some(Marker::PlayerStart), spawn: None });
+    world.set_tile(2, 2, Tile { terrain: None, prop: Some(PropKind::Tree), marker: Some(Marker::PlayerStart), spawn: None, person: None });
     assert_eq!(world.tile(2, 2), Tile::default());
 }
 
@@ -132,12 +132,12 @@ fn a_marker_is_in_one_place_at_a_time_and_only_on_ground() {
 fn set_tile_carries_the_marker_too() {
     let mut world = World::new();
     world.set_terrain(1, 1, Terrain::Grass);
-    let marked = Tile { terrain: Some(Terrain::Dirt), prop: None, marker: Some(Marker::PlayerStart), spawn: None };
+    let marked = Tile { terrain: Some(Terrain::Dirt), prop: None, marker: Some(Marker::PlayerStart), spawn: None, person: None };
     world.set_tile(8, 8, marked);
     assert_eq!(world.tile(8, 8), marked);
-    world.set_tile(1, 1, Tile { terrain: Some(Terrain::Grass), prop: None, marker: Some(Marker::PlayerStart), spawn: None });
+    world.set_tile(1, 1, Tile { terrain: Some(Terrain::Grass), prop: None, marker: Some(Marker::PlayerStart), spawn: None, person: None });
     assert_eq!(world.tile(8, 8).marker, None, "the marker moved");
-    world.set_tile(1, 1, Tile { terrain: Some(Terrain::Grass), prop: None, marker: None, spawn: None });
+    world.set_tile(1, 1, Tile { terrain: Some(Terrain::Grass), prop: None, marker: None, spawn: None, person: None });
     assert_eq!(world.marker(Marker::PlayerStart), None);
 }
 
@@ -181,7 +181,30 @@ fn a_monsters_home_is_on_ground_one_to_a_tile_and_goes_with_it() {
     world.clear_tile(40, 3);
     assert_eq!(world.spawns(), vec![(Goblin, 5, 1)]);
     // And set_tile carries it like everything else about a tile.
-    let tile = Tile { terrain: Some(Terrain::Dirt), prop: None, marker: None, spawn: Some(Goblin) };
+    let tile = Tile { terrain: Some(Terrain::Dirt), prop: None, marker: None, spawn: Some(Goblin), person: None };
     world.set_tile(9, 9, tile);
     assert_eq!(world.tile(9, 9), tile);
+}
+
+#[test]
+fn a_persons_home_is_on_ground_one_to_a_tile_and_goes_with_it() {
+    use crate::people::PersonKind::{Guard, Smith};
+    let mut world = World::new();
+    assert!(!world.set_person(2, 2, Some(Smith)), "no ground");
+    for (x, y) in [(2, 2), (40, 3)] {
+        world.set_terrain(x, y, Terrain::Grass);
+    }
+    assert!(world.set_person(2, 2, Some(Smith)) && world.set_person(40, 3, Some(Guard)));
+    assert!(world.set_person(2, 2, Some(Guard)), "someone else moves in");
+    assert_eq!(world.people(), vec![(Guard, 2, 2), (Guard, 40, 3)], "row by row, one to a tile");
+    assert_eq!((world.person_at(2, 2), world.person_at(3, 2)), (Some(Guard), None));
+    // The ground going takes them with it, and a chunk left with only
+    // a person in it is not empty.
+    world.clear_tile(40, 3);
+    assert_eq!(world.people(), vec![(Guard, 2, 2)]);
+    let tile = Tile { terrain: Some(Terrain::Dirt), prop: None, marker: None, spawn: None, person: Some(Smith) };
+    world.set_tile(9, 9, tile);
+    assert_eq!(world.tile(9, 9), tile);
+    assert!(world.set_person(2, 2, None) && world.set_person(9, 9, None));
+    assert_eq!(world.people(), vec![]);
 }

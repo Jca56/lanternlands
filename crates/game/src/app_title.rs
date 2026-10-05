@@ -109,6 +109,7 @@ impl Game {
         self.camera.center = Vec2::new(x as f64 + 0.5, y as f64 + 0.5);
         self.facing = Facing::default();
         self.monster_facing.clear();
+        self.person_facing.clear();
         self.phase = TICK_SECONDS;
         self.world_phase = 0.0;
         self.hud = Hud::default();

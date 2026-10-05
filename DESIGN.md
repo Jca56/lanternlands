@@ -1,8 +1,8 @@
 # Lanternlands — Design
 
-Working title (from the folder name). Claude's design doc; Alva's scratchpad is `Notes.md` (read-only for Claude, git-ignored).
+Claude's design doc; Alva's scratchpad is `Notes.md` (read-only for Claude, git-ignored).
 
-Status: design agreed for the core; milestones 1 (window, tile renderer, camera), 2 (map editor), 3 (ticks and walking) and 4 (bag, skills, mining) are done.
+Status: design agreed for the core; milestones 1 to 7 are done (see Milestones). 8a, people and talking, is built and waiting for Alva to try it.
 
 ## Pitch
 
@@ -33,7 +33,8 @@ Locked with Alva on 2026-10-04.
 | Hotbar | Six big buttons along the bottom middle, worked with the keys 1 to 6 or a press |
 | Monsters | They attack on sight: get near and they come for you. They give up when drawn too far from home |
 | Recovery | Health comes back slowly always, and quickly out of combat. Potions will be for the middle of a fight |
-| Drops | Monster parts only (Alchemy ingredients), straight into the bag. No coins or gear from monsters yet |
+| Drops | Monster parts (Alchemy ingredients), straight into the bag, and from milestone 8c a few coins as well (Alva, 2026-10-04: before that it was parts only). No gear from monsters yet |
+| Coins | A purse: a number shown with the bag that takes no slot and stays with the player through death. Earned by selling to shops, and dropped by monsters. Built with the shops (8c) |
 | Magic | Mana-based, no runes |
 | Healing | Potions (Alchemy). Food gives small buffs, WoW-style, not healing |
 | Gathering | Quick nodes: a few ticks, loot, node respawns later. Richer and rarer nodes sit deeper in dangerous territory. A node is worked in swings, each with a chance that climbs with level; it gives a few, then is spent until it comes back |
@@ -50,7 +51,7 @@ Locked with Alva on 2026-10-04.
 | First potions | Healing, Strength, Stoneskin, Regeneration |
 | Out | Woodcutting, Firemaking, Cooking-as-healing, rune-based magic |
 | Setting | Classic medieval fantasy |
-| Name | **Lanternlands** (Alva, 2026-10-04). Lantern-themed because a lantern mechanic is wanted in the game eventually. Before that the working title was "Explore the World", which the project folder may still be called. The repository is `github.com/Jca56/lanternlands` |
+| Name | **Lanternlands** (Alva, 2026-10-04). Lantern-themed because a lantern mechanic is wanted in the game eventually. Before that the working title was "Explore the World". The folder is `lanternlands` and the repository is `github.com/Jca56/lanternlands` |
 | Content | Designed together: Claude proposes here, Alva approves, then it gets built |
 | Death | Gravestone run-back: respawn in the last town with equipped gear; the inventory waits in a gravestone where you died. The grave is permanent (no timer), but there is only one: die again before reaching it and the old grave crumbles with its items |
 | Renderer | Our own wgpu sprite-batch pass, plugged in through `AppHost::render`; Lantern UI 2 draws the HUD on top |
@@ -58,10 +59,13 @@ Locked with Alva on 2026-10-04.
 | Screen | The world fills the window; the HUD floats over it (hotbar along the bottom, vitals in a corner, big panels open on demand) |
 | Saving | Always, by itself: there is no save button. What is earned is saved the moment it is got, the rest every ten seconds while anything is happening, and again on leaving |
 | Characters | Three slots, each a named character, picked on a title screen. Saves live in `~/.lantern/save/lanternlands/` (a new Lantern convention Alva agreed to) |
-| Title screen | A painting drawn in Lantern Studio behind the menu; the game's name is written over it as text, since the name is not final |
+| Title screen | A painting drawn in Lantern Studio behind the menu; the game's name is written over it as text |
 | Travel | One brisk speed, no stamina or run energy. Faster travel (mounts, teleports) can be unlocked later as a reward |
 | Inventory | 30 slots, 5 across and 6 down (taller than wide); materials stack, gear does not. Bank in towns |
 | World layout | One seamless overworld streamed in chunks; dungeons, caves, and building interiors are separate maps entered through doors |
+| People | They live on tiles the map gives them, put there with the editor like monsters. A press on one walks the player up to them and they talk |
+| Dialogue | Lines in a box (Alva, 2026-10-04): who is speaking and what they say, a line at a time, with a press for the next. Made so that replies to choose from can be added when quests come |
+| Towns | Open-air villages for now (Alva, 2026-10-04): market stalls, a bank chest and other scenery drawn as props, with no insides. Buildings with doors into maps of their own are a later milestone |
 
 ## Skills (approved 2026-10-04)
 
@@ -151,6 +155,16 @@ Forging is 15 experience a bar. The levels are set so that making each piece onc
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | Goblin | 2 | 12 | 1 | 1 | 2 | 4 ticks (1.6 s) | 4 tiles | 8 tiles from home | 3 tiles from home | Goblin tooth, 1 time in 2 | 60 ticks (24 s) |
 
+**People.** Each is the player's own body in other clothes, with gear's drawings over them in other colours.
+
+| Who | Does | Looks | Keeps to | Tells the player about |
+|---|---|---|---|---|
+| Bram | Smith | Grey tunic, black hair, a leather apron and dark gloves | Where he is put | Bronze from copper and tin, the pickaxe first, then armour |
+| Maren | Herbalist | Green tunic, grey hair, brown skin | Where she is put | Which herbs grow where, the healing potion, when to drink it |
+| Odo | Guard | Red tunic under the whole bronze set, sword and shield in hand | A round within 2 tiles of home, a step every 8 to 19 ticks | Goblins and their camps, the grave, losing it |
+
+Each has three lines. What they say is true of the game as it is: it is the only teaching there is so far.
+
 **Fighting.**
 
 - The player strikes every 3 ticks (1.2 s), bare-handed, from any of the eight tiles around.
@@ -218,9 +232,18 @@ Muted, warm, old-school. In the test sheet B is the A panel pushed through two a
 | Flower, purple | `#b768b7` | | Gravestone | `#9a9795` |
 | Flower, cyan | `#61b1b4` | | Copper ore | `#c78246` / `#d49c63` |
 
+Added for the villagers' clothes (proposed, 8a), each as tunic / its highlight / sleeves:
+
+| Use | Colours | | Use | Colour |
+|---|---|---|---|---|
+| Smith's grey | `#6a6563` / `#857f7c` / `#58534f` | | Hair, black | `#2f2622` |
+| Herbalist's green | `#4b7f39` / `#669b4d` / `#3f6d31` | | Hair, grey | `#c9c5c1` |
+| Guard's red | `#a24c40` / `#b96a5c` / `#8a3d34` | | Skin, brown | `#9c6b46` |
+| Leather (apron) | `#785230` | | Dark leather (gloves) | `#4a3423` |
+
 ## How it is built
 
-Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
+Milestones 1 to 8a and the save game, as of 2026-10-04.
 
 - **Layout.** A Cargo workspace: `crates/sim` (pure std: terrain, the chunked world, props and markers, pathfinding, the ticking player, the edit tools and their history, map files, a test map) and `crates/game` (the binary `lanternlands`: camera, sprite sheet packer, scene builder, the wgpu passes, the map editor and its panel, the Lantern UI 2 host). Art sources in `art/`, what the game loads in `assets/`.
 - **Window.** Lantern UI 2 by path, unmodified. One area with no header and no title bar; the world fills it and the interface will draw over it.
@@ -229,8 +252,8 @@ Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 - **Sprites.** Listed in `assets/sprites.toml` (file, rect, anchor). Art is 200 px per tile, twice the style sheet, so it stays sharp up to full zoom. Packed at startup into one sheet with smaller copies for zooming out; drawn back to front by where they stand.
 - **Decoration.** Grass tufts are scattered by a hash of the tile, on about one bare grass tile in five. They are not world data.
 - **The map.** `assets/maps/overworld/` is the real map: the game loads it and the editor saves to it. It started as `sim::testmap`, a made-up 48 x 32 map, written out once (Alva's choice); that generator stays for the tests.
-- **Map files.** One compact binary file per 32 x 32 chunk (Alva's choice), named for the chunk (`-1_0.chunk`), about 500 bytes each for the test map. Versioned, in tagged sections so layers can be added. Ground and props are stored by name, not number, so kinds can be added or reordered without breaking saved maps; an unknown name is an error, never a silent hole. Only changed chunks are written, each whole and then moved into place; a chunk erased to nothing loses its file.
-- **Map editor.** F2 docks a panel on the left (a real Lantern UI 2 area, so its edge drags): undo, redo, save; the tools (brush, eraser, fill, place, remove, move, start, spawn); the brush's width, 1 to 9 tiles; the grounds; the props and the monsters with their pictures. Remove takes a prop first, then a monster's home; a see-through monster stands on each home while editing. The left button works the held tool on the world, with the tiles it would touch lit under the pointer. A whole stroke is one undo step, 500 steps deep. Quitting with unsaved changes asks first.
+- **Map files.** One compact binary file per 32 x 32 chunk (Alva's choice), named for the chunk (`-1_0.chunk`), about 500 bytes each for the test map. Versioned, in tagged sections so layers can be added (the people's homes are the fifth; a build from before them skips it). Ground and props are stored by name, not number, so kinds can be added or reordered without breaking saved maps; an unknown name is an error, never a silent hole. Only changed chunks are written, each whole and then moved into place; a chunk erased to nothing loses its file.
+- **Map editor.** F2 docks a panel on the left (a real Lantern UI 2 area, so its edge drags): undo, redo, save; the tools (brush, eraser, fill, place, remove, move, start, spawn, person); the brush's width, 1 to 9 tiles; the grounds; the props, the monsters and the people with their pictures. Remove takes a prop first, then whoever lives on the tile; a see-through monster or person stands on each home while editing. The left button works the held tool on the world, with the tiles it would touch lit under the pointer. A whole stroke is one undo step, 500 steps deep. Quitting with unsaved changes asks first.
 - **Ticks and walking.** A tick is 0.4 s and a step takes one tick (Alva's choice). Steps go eight ways; a diagonal one needs both tiles beside it free, so no corner is cut. Water, the void, trees and rocks cannot be stood on; herbs can. A click finds the shortest way (A*, diagonal first then straight) and the player follows it a tile a tick, finding a new way if something gets in it. Clicking where they cannot stand walks them to the tile right beside it. The simulation knows only tiles and ticks; the game slides the sprite between tiles over the tick.
 - **The player's sprite.** `assets/sprites/player-01.png` (source in `art/sprites/`): three drawn facings (down, up, side; left is the side mirrored), each with an idle pose and a walk of stride, pass, other stride. A tile's step is a stride then a pass, and strides take turns. A diagonal step shows the side view. The manifest's `[grids.name]` table cuts such a sheet into sprites.
 - **The view while playing.** Always on the player, gliding after them; the wheel still zooms. Nothing redraws while the player and the view are at rest.
@@ -246,10 +269,11 @@ Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 - **Gear on the character.** Each slot has a sheet laid out exactly like the player's own (`assets/sprites/gear-*.png`), drawn over the body in a fixed order: legs, feet, body, hands, head, shield, weapon. The shield has a second sheet drawn under the body, for the views where it shows from behind. The sheets are plain greys and the game multiplies them by the metal's colour, so a new metal is a colour, not eight more sheets. Greaves, boots, chestplate and gauntlets were made in Lantern Studio from the player's own sheet (each body part picked out by its colour and filled grey, so they fit every pose by construction); helmet, sword and shield are drawn and placed for each of the 18 frames. The source is `art/sprites/player-gear.lstudio`.
 - **Sheets of cells are trimmed.** A grid's cell is packed as only the part of it that is drawn, with its anchor moved to match, and a cell with nothing in it is no sprite. The gear sheets are mostly empty, so this keeps the packed sheet small; it shrank the player's and the goblin's too.
 - **Herbs and potions** (`sim::potions`, `tonics.rs`). The purple and cyan herbs already on the map are nodes now: a click walks onto one (they are not in the way) and picks it, which never fails; a picked one is drawn as its leaves until it grows back. A cauldron is a third station, with the same panel as the furnace and anvil; a station names the skill it takes, so the panel says Alchemy there. A press on a potion in the bag drinks it (the same press that puts gear on). What a lasting potion is doing shows under the health bar, its picture and the seconds left; a potion in the bag whose kind is still waiting is dark with its seconds on it. What potions are doing is counted in the world's ticks, ends with death, and is not saved.
+- **People and talking** (`sim::people`, `talk.rs`, `app_people.rs`, `wear.rs`). The map says where each person lives (the editor's Person tool; a fifth section in the chunk file); a tile is home to one, so settling a person where a monster lives sends the monster away, and the other way round. A person takes up their tile like a monster does: the player's way goes round them and ends beside them, and monsters go round them too. Nothing strikes them and they strike nothing. A press on one walks the player up to them, and from the tile beside them the talk starts: what they have to say comes a line at a time, each press hearing the next, and the talk is over after the last, on walking off, on Esc, or when a monster strikes at the player. Whoever the player is coming to or talking with waits where they are and turns to face them. Those who wander take a step now and then on the world's tick, never far from home and never onto anybody. The talk is kept in the simulation, not the interface, so it can be tested with no window and quests can hang off it later. On screen, each person has their name over their head on a dark plate, and the talk is a box standing on the hotbar, on a layer over the other panels: the name big, what they do beside it, the line wrapped under them, how far through they are, and a big button (Next, and Goodbye after the last line). The box is sized for the longest thing that person says, so it does not jump from line to line. A person's sheet is the player's own with other colours (`assets/sprites/person-*.png`, sources `art/sprites/person-*.lstudio`: the fills of the player's shapes changed, so every pose fits by construction), and what they wear over it is the gear's sheets in whatever colour, so an apron or a suit of armour costs no drawing.
 - **More drawings.** The player's sheet gained a wind-up and a strike for each facing; a spent rock is the rock without its copper; items have 128 px icons in `assets/items/` (sources in `art/items/`).
 - **Characters and saves.** The game opens on a title screen (`title.rs`): the painting `assets/title/title-01.png` (source in `art/title/`) cut to fill the window, the game's name, three character slots and Quit. An empty slot asks for a name (1 to 16 letters) and starts a new character; a held one continues; Delete asks first. A save (`sim::save`) is one small binary file per character, `character-N.save`, in sections like a chunk file's, with skills and items by name: who they are and how long they have been played, where they stand, their skills and bag, the nodes they left spent with the time each has left, and their grave. Health and monsters are not saved: both come back whole. It is written whole and then moved into place. Resuming on a map that has changed stands the player as near where they were as they can be and forgets nodes that are gone. Esc goes back to the title screen. The map belongs to no character: all three play on the same one.
-- **Controls for now.** Click to walk, to work a rock, to fight a monster, to use a furnace or an anvil, or to open the grave. 1 to 6 for the hotbar; I, K and G for the bag, the skills and the gear. Esc for the title screen. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
-- **How it is checked.** 350 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `LANTERNLANDS_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels, the bag, a fight and a grave can be looked at and their pixels checked. Fights are played through end to end the same way: a goblin is put beside the player and time is let pass.
+- **Controls for now.** Click to walk, to work a rock, to fight a monster, to talk with a person, to use a furnace or an anvil, or to open the grave. 1 to 6 for the hotbar; I, K and G for the bag, the skills and the gear. In a talk, Space, Enter, the button or a press anywhere on the box hears the next line. Esc ends a talk or steps back from a station, and with neither open goes to the title screen. Wheel zooms about the pointer, F11 fullscreen, Ctrl+Q quits. F2 opens and closes the editor; in it, middle-drag or arrows / WASD move the view, Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+S saves.
+- **How it is checked.** 374 tests. The render tests draw the test map with no window and compare pixels with the palette and with colours read off the style sheet (ground colours, rims, the void, a tree's trunk, canopy and shadow, no gaps between ground quads, the window showing the same numbers). `LANTERNLANDS_RENDER_OUT=<folder> cargo test -p game` keeps those pictures as PNGs. The editor is driven end to end with Lantern UI 2's headless harness: pretend keys and clicks open the panel, pick rows, paint, undo, save, and quit through the dialog, against a scratch copy of the map. Whole frames (the world pass and the interface over it, put together as `lntrn-app` does) are drawn with no window too, so the panels, the bag, a fight and a grave can be looked at and their pixels checked. Fights are played through end to end the same way: a goblin is put beside the player and time is let pass. So are talks: a person is settled near the player, clicked, and heard out by key and by button.
 
 ### Calls Claude made, Alva's to overrule
 
@@ -316,6 +340,18 @@ Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 61. A herb is picked with the same swing the player mines and fights with.
 62. A healing potion pressed at full health stays in the bag rather than being wasted.
 63. Potions are told apart by a white mark as well as their colour: a cross, an arrow, a shield, a leaf.
+64. The three villagers, their names (Bram, Maren, Odo), what each does and every word they say.
+65. Villagers are the player's own body in other clothes, not drawings of their own, and their clothes' colours are new to the palette.
+66. What a villager wears over their clothes is the gear's drawings in another colour: the smith's apron is the chestplate in leather, and the guard wears the whole bronze set with sword and shield.
+67. A person's name is always over their head, not only under the pointer.
+68. The smith and the herbalist stay where they are put. The guard walks a round, and stops for whoever is coming to talk.
+69. People take up their tile and cannot be hurt. Monsters take no notice of them beyond going round. The player is never put on a tile someone lives on (waking, or after the map changes): they stand as near it as there is room.
+70. A blow struck at the player ends a talk. Asked again, a person starts from the top.
+71. The world goes on while someone talks: nothing pauses.
+72. The talk box stands on the hotbar and lies over any panel it meets; a press anywhere on it hears the next line.
+73. Space and Enter hear the next line as well as the button.
+74. A tile is home to one, monster or person. The move tool carries props only: someone's home is taken away and put down again.
+75. There is no picture of the speaker in the talk box yet.
 
 ## Open questions
 
@@ -326,7 +362,10 @@ Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 - Where experience gained is shown, now that it no longer floats over the player
 - The Skills panel's look: Alva does not like Lantern UI 2's stock progress bars there. To be redrawn as our own rows (it is one function in `hud.rs`); what they should look like is not decided
 - The XP curve's numbers (proposed above), and what each level unlocks
-- Quests and NPC dialogue: when, and how deep
+- Quests: when, and how deep. (Talking is lines in a box for now; replies to choose from come with quests)
+- What a goblin drops in coins, and what things sell and are bought for (8c)
+- Names: the villagers' are proposed, and the village has none
+- Whether the talk box shows the speaker's picture
 - Where assets live for a deployed binary (it finds them beside itself, else in the source tree)
 - Ground edges: keep the shader's rounded steps, or hand-drawn transitions?
 - Audio
@@ -345,4 +384,7 @@ Milestones 1 to 5b (fighting, abilities) and the save game, as of 2026-10-04.
 6a. Smithing: tin rock, furnace, anvil, bronze bars, the bronze set and a pickaxe forged into the bag, the making panel. **Done 2026-10-04**: Alva smithed the whole set ("Heck yeah! Awesome!")
 6b. Equipment: the seven slots, the gear panel, what gear does in a fight, gear drawn on the character and tinted by its metal, gear kept through death and saved. **Done 2026-10-04**: Alva wore it all, screenshot and all
 7. Herbalism, Alchemy, potions: herbs as nodes, the cauldron, the four first potions, drinking from the bag, what a potion does shown while it lasts. **Done 2026-10-04**: Alva tried it ("it works!") and found that continuing a game started at a new character's health, since fixed
-8. NPCs, shops, bank, dialogue
+8. NPCs, shops, bank, dialogue, in three parts (Alva, 2026-10-04):
+8a. People and talking: people who live on the map, the editor's Person tool, the talk box, three villagers (a smith, a herbalist, a guard). **Built 2026-10-04; Alva has not tried it yet**
+8b. The bank: a bank chest and a banker in the village, a panel to move things between it and the bag. With it, the first village scenery
+8c. Shops and coins: the purse, coins from goblins, a shopkeeper at a market stall, buying and selling

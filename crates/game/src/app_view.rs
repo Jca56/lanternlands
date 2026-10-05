@@ -12,6 +12,8 @@ use crate::hotbar;
 use crate::hud::{Press, Sight};
 use crate::making;
 use crate::scene::{GEAR_ORDER, Placed, metal_tint};
+use crate::talk;
+use crate::wear::dress;
 
 /// How much one notch of the wheel zooms.
 const ZOOM_PER_NOTCH: f64 = 1.15;
@@ -22,8 +24,9 @@ const KEY_PAN_SPEED: f64 = 1000.0;
 const LONGEST_STEP: f64 = 0.1;
 /// The longest the game's clock runs on from one frame to the next.
 const LONGEST_WAIT: f64 = 1.0;
-/// The part of a monster a click counts as on it, in tiles from its
-/// feet: this far to either side, this far up, this far down.
+/// The part of somebody a click counts as on them, in tiles from their
+/// feet: this far to either side, this far down, and as far up as they
+/// are tall, which for a monster is this.
 const AIM_HALF_WIDTH: f64 = 0.45;
 const AIM_HEIGHT: f64 = 1.15;
 const AIM_BELOW: f64 = 0.15;
@@ -34,11 +37,18 @@ const FOLLOW_RATE: f64 = 8.0;
 const FOLLOW_SETTLED: f64 = 0.002;
 /// The ring on the tile the player is walking to.
 const GOAL_RING: Color = Color::rgba(0.757, 0.608, 0.290, 0.9);
-/// How see-through the editor's ghost of the player's start is.
-const GHOST: f32 = 0.5;
+/// How see-through the editor's ghosts are: the player on their start,
+/// and whoever lives on a tile.
+pub(super) const GHOST: f32 = 0.5;
 /// How far up the screen, in tiles, what lies on the ground under
 /// someone is put, to be drawn before them. Far too little to see.
 const UNDER: f64 = 1e-4;
+
+/// Whether a point of the world, in tiles, is on somebody `height`
+/// tiles tall whose feet are at `feet`.
+pub(super) fn on_body(at: Vec2, feet: Vec2, height: f64) -> bool {
+    (at.x - feet.x).abs() <= AIM_HALF_WIDTH && at.y >= feet.y - height && at.y <= feet.y + AIM_BELOW
+}
 
 impl Game {
     /// Which way the held keys push the view: arrows or WASD.
@@ -133,15 +143,16 @@ impl Game {
     }
 
     /// Playing: a press sets the player on what is under the pointer (a
-    /// monster to fight, a rock to work, the grave to open) or walks
-    /// them there; the world's clock and the player's tick; the view
+    /// monster to fight, a person to talk with, a rock to work, the
+    /// grave to open) or walks them there; the world's clock and the player's tick; the view
     /// glides after the player; and the interface floats over it all.
     fn play(&mut self, ui: &mut Ui, hand: &Response, dt: f64) {
         let at = self.camera.to_world(ui.state.pointer, self.view, self.scale);
         let under = (at.x.floor() as i32, at.y.floor() as i32);
         let aimed = if hand.hovered { self.monster_under(ui.state.pointer) } else { None };
+        let hailed = if hand.hovered && aimed.is_none() { self.person_under(ui.state.pointer) } else { None };
         let usable = self.sim.node_left(under).is_some_and(|left| left > 0) || self.sim.station_at(under).is_some() || self.sim.grave.as_ref().is_some_and(|g| g.tile == under);
-        if hand.hovered && (aimed.is_some() || usable) {
+        if hand.hovered && (aimed.is_some() || hailed.is_some() || usable) {
             ui.state.cursor_icon = CursorIcon::Pointer;
         }
         if hand.pressed {
@@ -149,9 +160,10 @@ impl Game {
                 // From a standstill, the player's first tick comes at once.
                 self.phase = TICK_SECONDS;
             }
-            match aimed {
-                Some(monster) => self.sim.attack(monster),
-                None => self.sim.click(under),
+            match (aimed, hailed) {
+                (Some(monster), _) => self.sim.attack(monster),
+                (None, Some(person)) => self.sim.talk_to(person),
+                (None, None) => self.sim.click(under),
             }
         }
         // The world keeps its own time, steadily, while anything in it
@@ -179,6 +191,7 @@ impl Game {
         if !self.sim.acting() {
             self.phase = TICK_SECONDS;
         }
+        self.face_people();
         let now = ui.now();
         let events = self.sim.take_events();
         self.hud.hear(&events, &self.sim, now);
@@ -210,6 +223,7 @@ impl Game {
         }
         let (camera, view, scale) = (self.camera, self.view, self.scale);
         let monsters = self.monster_grounds();
+        talk::draw_names(ui, &self.sim, &self.person_grounds(), &|world| camera.to_screen(world, view, scale));
         let sight = Sight { player: target, to_screen: &|world| camera.to_screen(world, view, scale), monsters: &monsters, tile_px: camera.tile_px(scale), into: self.world_phase / TICK_SECONDS };
         let wear = self.hud.draw(ui, self.view, &self.sim, &self.item_pictures, &sight);
         match wear {
@@ -230,6 +244,10 @@ impl Game {
                 self.phase = TICK_SECONDS;
             }
             self.sim.make(recipe, count);
+        }
+        if talk::draw(ui, self.view, &self.sim) {
+            self.sim.talk_on();
+            ui.state.request_redraw_after(0.0);
         }
 
         // Every frame while something moves; else only when the world's
@@ -258,14 +276,17 @@ impl Game {
     }
 
     /// Turn the player the way they last stepped, or toward what they
-    /// are working at or fighting.
+    /// are working at or fighting, or whoever is talking to them.
     fn face(&mut self) {
         let player = &self.sim.player;
         let toward = |at: (i32, i32)| (at.0 - player.tile.0, at.1 - player.tile.1);
         let way = match player.activity() {
             Some(Activity::Working { at, .. } | Activity::Making { at, .. }) => toward(at),
             Some(Activity::Fighting { target, .. }) => self.sim.monsters.get(target).map_or((0, 0), |m| toward(m.tile)),
-            None => (player.tile.0 - player.from.0, player.tile.1 - player.from.1),
+            None => match self.sim.saying().and_then(|saying| self.sim.people.get(saying.person)) {
+                Some(person) => toward(person.tile),
+                None => (player.tile.0 - player.from.0, player.tile.1 - player.from.1),
+            },
         };
         self.facing = Facing::of_step(way.0, way.1).unwrap_or(self.facing);
     }
@@ -294,7 +315,7 @@ impl Game {
     pub(super) fn monster_under(&self, pointer: Vec2) -> Option<usize> {
         let at = self.camera.to_world(pointer, self.view, self.scale);
         let grounds = self.monster_grounds();
-        let over = |feet: &Vec2| (at.x - feet.x).abs() <= AIM_HALF_WIDTH && at.y >= feet.y - AIM_HEIGHT && at.y <= feet.y + AIM_BELOW;
+        let over = |feet: &Vec2| on_body(at, *feet, AIM_HEIGHT);
         let alive = |&(i, _): &(usize, &Vec2)| self.sim.monsters[i].alive();
         grounds.iter().enumerate().filter(alive).filter(|(_, feet)| over(feet)).max_by(|a, b| a.1.y.total_cmp(&b.1.y)).map(|(i, _)| i)
     }
@@ -334,8 +355,9 @@ impl Game {
     }
 
     /// What stands in the world besides the map's own props: the
-    /// player, the monsters, the grave; and while editing, ghosts of the
-    /// player on their start and of each monster on its home.
+    /// player, the monsters, the people, the grave; and while editing,
+    /// ghosts of the player on their start and of everyone else on the
+    /// tile they live on.
     pub(super) fn extras(&self) -> Vec<Placed> {
         let mut extras = Vec::new();
         let middle = |x: i32, y: i32| Vec2::new(x as f64 + 0.5, y as f64 + 0.5);
@@ -371,6 +393,7 @@ impl Game {
                 }
             }
         }
+        self.stand_people(&mut extras);
         if let (Some(grave), Some(sprite)) = (&self.sim.grave, self.look.gravestone) {
             extras.push(Placed { sprite, ground: middle(grave.tile.0, grave.tile.1), flip: false, tint: [1.0; 4] });
         }
@@ -379,24 +402,11 @@ impl Game {
         // standing ready between them.
         let player = &self.sim.player;
         let pose = Pose::swing(player.swung, self.sim.swing_due(), into).unwrap_or_else(|| Pose::at(player.moved(), player.steps, into));
-        // The player is drawn in layers: what shows from behind them,
-        // their body, then what they wear over it, each piece in its
-        // metal's colour.
-        let ground = self.player_ground();
+        // The player is drawn in layers, each piece of what they wear
+        // in its metal's colour.
         let worn = |slot| self.sim.gear.worn(slot).and_then(|item| Some((self.look.gear(slot), metal_tint(item.metal()?))));
-        for (gear, tint) in GEAR_ORDER.into_iter().filter_map(worn) {
-            if let Some((sprite, flip)) = gear.under.sprite(self.facing, pose) {
-                extras.push(Placed { sprite, ground, flip, tint });
-            }
-        }
-        if let Some((sprite, flip)) = walk.sprite(self.facing, pose) {
-            extras.push(Placed { sprite, ground, flip, tint: [1.0; 4] });
-        }
-        for (gear, tint) in GEAR_ORDER.into_iter().filter_map(worn) {
-            if let Some((sprite, flip)) = gear.over.sprite(self.facing, pose) {
-                extras.push(Placed { sprite, ground, flip, tint });
-            }
-        }
+        let worn: Vec<_> = GEAR_ORDER.into_iter().filter_map(worn).collect();
+        dress(&mut extras, self.player_ground(), self.facing, pose, walk, &worn);
         extras
     }
 }

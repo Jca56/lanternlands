@@ -16,8 +16,10 @@ mod panel;
 mod render;
 mod saves;
 mod scene;
+mod talk;
 mod title;
 mod tonics;
+mod wear;
 
 use lntrn_app::{AppConfig, run};
 use lntrn_ui::Shell;

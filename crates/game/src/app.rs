@@ -12,7 +12,7 @@ use lntrn_ui::keymap::CTX_WINDOW;
 use lntrn_ui::{Action, AreaCx, Axis, Dialog, Host, HostCx, Key, KeyConfig, KeyItem, KeyPress, Modifiers, Shell, ShellRequest, Trigger, Ui};
 use lntrn_image::Image;
 use lntrn_ui::ImageHandle;
-use sim::{Ability, Character, Item, MonsterKind, PropKind, Sim, TICK_SECONDS, World};
+use sim::{Ability, Character, Item, MonsterKind, PersonKind, PropKind, Sim, TICK_SECONDS, World};
 
 use crate::anim::{Facing, Pose};
 use crate::assets::{self, SpriteSet};
@@ -37,6 +37,8 @@ const SAVE: &str = "editor.save";
 const BAG: &str = "hud.bag";
 const SKILLS: &str = "hud.skills";
 const GEAR: &str = "hud.gear";
+/// Hear the next thing whoever is talking has to say.
+const TALK: &str = "hud.talk";
 /// The hotbar's buttons, left to right: the keys 1 to 6.
 const SLOT_KEYS: [&str; hotbar::SLOTS] = ["hud.slot.1", "hud.slot.2", "hud.slot.3", "hud.slot.4", "hud.slot.5", "hud.slot.6"];
 const TITLE: &str = "game.title";
@@ -99,9 +101,10 @@ pub struct Game {
     phase: f64,
     /// Seconds into the world's tick under way.
     world_phase: f64,
-    /// The way the player last stepped, and each monster.
+    /// The way the player last stepped, and each monster and person.
     facing: Facing,
     monster_facing: Vec<Facing>,
+    person_facing: Vec<Facing>,
     /// Where the map is saved.
     map: PathBuf,
     /// Why the map did not load, until it has been said.
@@ -201,6 +204,8 @@ impl Game {
         for (i, slot) in SLOT_KEYS.iter().enumerate() {
             bind(Key::Char((b'1' + i as u8) as char), Modifiers::NONE, slot);
         }
+        bind(Key::Space, Modifiers::NONE, TALK);
+        bind(Key::Enter, Modifiers::NONE, TALK);
         bind(Key::Escape, Modifiers::NONE, TITLE);
         let mut game = Game {
             mode: Mode::Title,
@@ -221,6 +226,7 @@ impl Game {
             world_phase: 0.0,
             facing: Facing::default(),
             monster_facing: Vec::new(),
+            person_facing: Vec::new(),
             map,
             load_error,
             camera: Camera::new(Vec2::new(x as f64 + 0.5, y as f64 + 0.5)),
@@ -363,7 +369,9 @@ impl Host for Game {
             SKILLS if playing && !self.editing => self.hud.skills_open = !self.hud.skills_open,
             GEAR if playing && !self.editing => self.hud.gear_open = !self.hud.gear_open,
             slot if playing && !self.editing && SLOT_KEYS.contains(&slot) => self.use_slot(SLOT_KEYS.iter().position(|key| *key == slot).unwrap_or(0)),
+            TALK if playing && !self.editing => self.sim.talk_on(),
             // Esc closes what is open before it leaves the game.
+            TITLE if playing && !self.editing && self.sim.saying().is_some() => self.sim.end_talk(),
             TITLE if playing && !self.editing && self.sim.station().is_some() => self.sim.leave_station(),
             TITLE if playing && !self.editing => self.back_to_title(),
             CREATE => self.create_character(),
@@ -431,6 +439,10 @@ impl AppHost for Game {
             let standing = self.look.monster(kind).sprite(Facing::Down, Pose::Idle);
             *slot = standing.map(|(id, _)| images.add(gpu, self.sprites.picture(id)));
         }
+        for (slot, kind) in self.pictures.people.iter_mut().zip(PersonKind::ALL) {
+            let standing = self.look.person(kind).sprite(Facing::Down, Pose::Idle);
+            *slot = standing.map(|(id, _)| images.add(gpu, self.sprites.picture(id)));
+        }
         self.title_picture = self.title_image.as_ref().map(|image| images.add(gpu, image));
     }
 
@@ -475,6 +487,9 @@ mod view;
 
 #[path = "app_title.rs"]
 mod view_title;
+
+#[path = "app_people.rs"]
+mod view_people;
 
 #[cfg(test)]
 #[path = "app_tests.rs"]

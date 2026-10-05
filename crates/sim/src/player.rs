@@ -11,6 +11,7 @@ use crate::potions::{Potion, Tonics};
 use crate::monsters::Monster;
 use crate::nodes::Node;
 use crate::path;
+use crate::people::{Person, Talk, people_of};
 use crate::rng::Rng;
 use crate::skills::{Skill, Skills};
 use crate::world::{Marker, World};
@@ -40,6 +41,8 @@ pub struct Player {
     pub(crate) activity: Option<Activity>,
     /// The station they walked up to and have not left, and its tile.
     pub(crate) station: Option<(Station, (i32, i32))>,
+    /// Who is talking to them, and how far into what they have to say.
+    pub(crate) talk: Option<Talk>,
 }
 
 /// Something the player means to do once they are in reach of it.
@@ -49,6 +52,8 @@ pub(crate) enum Intent {
     Use((i32, i32)),
     /// Fight a monster.
     Attack(usize),
+    /// Talk with a person.
+    Talk(usize),
 }
 
 /// Something the player is busy at, standing still.
@@ -162,6 +167,8 @@ pub struct Sim {
     pub(crate) worked: HashMap<(i32, i32), Worked>,
     /// Every monster on the map, in the order of the map's spawns.
     pub monsters: Vec<Monster>,
+    /// Every person on the map, in the order of the map's homes.
+    pub people: Vec<Person>,
     /// Where the player died, and what they carried.
     pub grave: Option<Grave>,
     /// The world tick of the last blow given or taken.
@@ -186,15 +193,15 @@ fn monsters_of(world: &World) -> Vec<Monster> {
     world.spawns().into_iter().map(|(kind, x, y)| Monster::new(kind, (x, y))).collect()
 }
 
-/// The tile nearest `near` that can be stood on, `near` itself if it
-/// can. `None` when there is none within reach.
+/// The tile nearest `near` that can be stood on and is nobody's home,
+/// `near` itself if it is one. `None` when there is none within reach.
 pub fn place_to_stand(world: &World, near: (i32, i32)) -> Option<(i32, i32)> {
     (0..=STAND_SEARCH).find_map(|ring| {
         // The tiles exactly `ring` steps away, nearest in a straight line first.
         let mut tiles: Vec<(i32, i32)> = (-ring..=ring).flat_map(|d| [(d, -ring), (d, ring), (-ring, d), (ring, d)]).collect();
         tiles.sort_by_key(|&(dx, dy)| (dx * dx + dy * dy, dy, dx));
         tiles.dedup();
-        tiles.into_iter().map(|(dx, dy)| (near.0 + dx, near.1 + dy)).find(|&(x, y)| world.walkable(x, y))
+        tiles.into_iter().map(|(dx, dy)| (near.0 + dx, near.1 + dy)).find(|&(x, y)| world.walkable(x, y) && world.person_at(x, y).is_none())
     })
 }
 
@@ -202,9 +209,9 @@ impl Sim {
     /// The player starts where the map says, whole and with nothing.
     pub fn new(world: World) -> Sim {
         let tile = start_tile(&world);
-        let player = Player { tile, from: tile, steps: 0, health: 0, swung: false, path: VecDeque::new(), goal: None, intent: None, activity: None, station: None };
-        let monsters = monsters_of(&world);
-        let mut sim = Sim { world, player, skills: Skills::default(), inventory: Inventory::default(), gear: Gear::default(), ticks: 0, worked: HashMap::new(), monsters, grave: None, last_fight: None, book: Book::default(), tonics: Tonics::default(), rng: Rng::new(0x5EED), events: Vec::new() };
+        let player = Player { tile, from: tile, steps: 0, health: 0, swung: false, path: VecDeque::new(), goal: None, intent: None, activity: None, station: None, talk: None };
+        let (monsters, people) = (monsters_of(&world), people_of(&world));
+        let mut sim = Sim { world, player, skills: Skills::default(), inventory: Inventory::default(), gear: Gear::default(), ticks: 0, worked: HashMap::new(), monsters, people, grave: None, last_fight: None, book: Book::default(), tonics: Tonics::default(), rng: Rng::new(0x5EED), events: Vec::new() };
         sim.player.health = sim.max_health();
         sim
     }
@@ -238,16 +245,16 @@ impl Sim {
 
     /// Whether a tick of the world still to come will change something
     /// even with the player standing idle: a spent node coming back, a
-    /// monster going about, health mending, an ability's time running
-    /// down.
+    /// monster or a wanderer going about, health mending, an ability's
+    /// time running down.
     pub fn waiting(&self) -> bool {
-        self.worked.values().any(|w| w.back_at.is_some()) || !self.monsters.is_empty() || self.player.health < self.max_health() || self.book.cooling(self.ticks) || self.tonics.running(self.ticks)
+        self.worked.values().any(|w| w.back_at.is_some()) || !self.monsters.is_empty() || self.people.iter().any(|p| p.kind.roam() > 0) || self.player.health < self.max_health() || self.book.cooling(self.ticks) || self.tonics.running(self.ticks)
     }
 
     /// Whether anything other than the player moved or struck on the
     /// world's last tick: something to watch.
     pub fn stirring(&self) -> bool {
-        self.monsters.iter().any(|m| m.alive() && (m.moved() || m.swung_at == Some(self.ticks)))
+        self.monsters.iter().any(|m| m.alive() && (m.moved() || m.swung_at == Some(self.ticks))) || self.people.iter().any(Person::moved)
     }
 
     /// What a press on a tile means: use what is there (a node, the
@@ -269,6 +276,7 @@ impl Sim {
         self.player.intent = None;
         self.player.activity = None;
         self.player.station = None;
+        self.player.talk = None;
     }
 
     /// Whether a living monster stands on `tile`.
@@ -276,12 +284,12 @@ impl Sim {
         self.monsters.iter().any(|m| m.alive() && m.tile == tile)
     }
 
-    /// The player's way to `to`, round every monster: a tile holds one
-    /// body. Where a monster stands on `to` itself, the way stops
-    /// beside it.
+    /// The player's way to `to`, round every monster and person: a tile
+    /// holds one body. Where somebody stands on `to` itself, the way
+    /// stops beside them.
     pub(crate) fn way_to(&self, to: (i32, i32)) -> Vec<(i32, i32)> {
-        let mut way = path::find_around(&self.world, self.player.tile, to, &|tile| self.monster_on(tile));
-        if way.last().is_some_and(|&last| self.monster_on(last)) {
+        let mut way = path::find_around(&self.world, self.player.tile, to, &|tile| self.someone_on(tile));
+        if way.last().is_some_and(|&last| self.someone_on(last)) {
             way.pop();
         }
         way
@@ -294,6 +302,7 @@ impl Sim {
         self.player.intent = None;
         self.player.activity = None;
         self.player.station = None;
+        self.player.talk = None;
     }
 
     /// The world changed under the player (the map was edited): if they
@@ -306,10 +315,10 @@ impl Sim {
         }
         self.player.from = self.player.tile;
         // What was worked may be gone, or be something else now, and
-        // the monsters live where the map now says.
+        // the monsters and the people live where the map now says.
         let world = &self.world;
         self.worked.retain(|&(x, y), _| world.prop_at(x, y).is_some_and(|p| p.kind.node().is_some()));
-        self.monsters = monsters_of(&self.world);
+        (self.monsters, self.people) = (monsters_of(&self.world), people_of(&self.world));
         self.book.drop_all();
         self.player.health = self.player.health.min(self.max_health());
     }
@@ -327,6 +336,7 @@ impl Sim {
         let now = self.ticks;
         self.worked.retain(|_, w| w.back_at.is_none_or(|at| at > now));
         self.monsters_act();
+        self.people_act();
         self.recover();
         self.regenerate();
     }
@@ -339,6 +349,7 @@ impl Sim {
         self.step();
         self.engage(true);
         self.arrive();
+        self.greet();
         self.work();
         self.craft();
         self.use_abilities();
@@ -440,7 +451,7 @@ impl Sim {
             return;
         };
         let step = (next.0 - self.player.tile.0, next.1 - self.player.tile.1);
-        let free = path::can_step(&self.world, self.player.tile, step) && !self.monster_on(next);
+        let free = path::can_step(&self.world, self.player.tile, step) && !self.someone_on(next);
         let player = &mut self.player;
         if free {
             player.path.pop_front();
@@ -451,7 +462,7 @@ impl Sim {
             }
         } else if let Some(goal) = player.goal {
             // Something is in the way that was not (the map changed, or
-            // a monster walked into it): find another way,
+            // somebody walked into it): find another way,
             // and take its first step on the next tick. They are still
             // going for what they were going for.
             let intent = player.intent;

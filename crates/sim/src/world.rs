@@ -7,6 +7,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use crate::monsters::MonsterKind;
+use crate::people::PersonKind;
 use crate::terrain::Terrain;
 
 /// Tiles along one side of a chunk.
@@ -95,6 +96,8 @@ pub struct Tile {
     pub marker: Option<Marker>,
     /// The kind of monster that lives here.
     pub spawn: Option<MonsterKind>,
+    /// The person who lives here.
+    pub person: Option<PersonKind>,
 }
 
 pub(crate) struct Chunk {
@@ -105,16 +108,18 @@ pub(crate) struct Chunk {
     pub(crate) markers: Vec<(Marker, i32, i32)>,
     /// Each tile in this chunk where a monster lives, and its kind.
     pub(crate) spawns: Vec<(MonsterKind, i32, i32)>,
+    /// Each tile in this chunk where a person lives, and who.
+    pub(crate) people: Vec<(PersonKind, i32, i32)>,
 }
 
 impl Chunk {
     pub(crate) fn new() -> Chunk {
-        Chunk { tiles: Box::new([VOID; AREA]), props: Vec::new(), markers: Vec::new(), spawns: Vec::new() }
+        Chunk { tiles: Box::new([VOID; AREA]), props: Vec::new(), markers: Vec::new(), spawns: Vec::new(), people: Vec::new() }
     }
 
     /// No ground anywhere and nothing standing: not worth keeping.
     pub(crate) fn is_empty(&self) -> bool {
-        self.props.is_empty() && self.markers.is_empty() && self.spawns.is_empty() && self.tiles.iter().all(|&t| t == VOID)
+        self.props.is_empty() && self.markers.is_empty() && self.spawns.is_empty() && self.people.is_empty() && self.tiles.iter().all(|&t| t == VOID)
     }
 }
 
@@ -162,6 +167,7 @@ impl World {
             chunk.props.retain(|p| (p.x, p.y) != (x, y));
             chunk.markers.retain(|&(_, mx, my)| (mx, my) != (x, y));
             chunk.spawns.retain(|&(_, sx, sy)| (sx, sy) != (x, y));
+            chunk.people.retain(|&(_, px, py)| (px, py) != (x, y));
             self.dirty.insert(key);
         }
     }
@@ -262,6 +268,35 @@ impl World {
         all
     }
 
+    /// The person who lives on a tile.
+    pub fn person_at(&self, x: i32, y: i32) -> Option<PersonKind> {
+        let (key, _) = locate(x, y);
+        self.chunks.get(&key)?.people.iter().find(|&&(_, px, py)| (px, py) == (x, y)).map(|&(kind, _, _)| kind)
+    }
+
+    /// Make a tile the home of a person, or of nobody. `false`, and
+    /// nothing changes, when the tile has no ground.
+    pub fn set_person(&mut self, x: i32, y: i32, kind: Option<PersonKind>) -> bool {
+        if self.terrain(x, y).is_none() {
+            return false;
+        }
+        if self.person_at(x, y) != kind {
+            let (key, _) = locate(x, y);
+            let people = &mut self.chunks.get_mut(&key).expect("the tile has ground").people;
+            people.retain(|&(_, px, py)| (px, py) != (x, y));
+            people.extend(kind.map(|kind| (kind, x, y)));
+            self.dirty.insert(key);
+        }
+        true
+    }
+
+    /// Every person's home on the map, row by row.
+    pub fn people(&self) -> Vec<(PersonKind, i32, i32)> {
+        let mut all: Vec<_> = self.chunks.values().flat_map(|chunk| chunk.people.iter().copied()).collect();
+        all.sort_by_key(|&(_, x, y)| (y, x));
+        all
+    }
+
     /// Whether someone can stand on a tile: ground that can be walked
     /// on, with nothing in the way.
     pub fn walkable(&self, x: i32, y: i32) -> bool {
@@ -270,7 +305,7 @@ impl World {
 
     /// Everything about a tile at once.
     pub fn tile(&self, x: i32, y: i32) -> Tile {
-        Tile { terrain: self.terrain(x, y), prop: self.prop_at(x, y).map(|p| p.kind), marker: self.marker_at(x, y), spawn: self.spawn_at(x, y) }
+        Tile { terrain: self.terrain(x, y), prop: self.prop_at(x, y).map(|p| p.kind), marker: self.marker_at(x, y), spawn: self.spawn_at(x, y), person: self.person_at(x, y) }
     }
 
     /// Make a tile exactly `tile`. With no ground, nothing stands on it
@@ -296,6 +331,7 @@ impl World {
             }
         }
         self.set_spawn(x, y, tile.spawn);
+        self.set_person(x, y, tile.person);
     }
 
     /// Every prop on the tiles from `(x0, y0)` up to, not including,

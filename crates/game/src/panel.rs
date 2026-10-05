@@ -1,9 +1,10 @@
 //! The map editor's side panel: the tools, the brush's width, the
-//! grounds and the props to pick from, and undo, redo and save.
+//! grounds, the props, the monsters and the people to pick from, and
+//! undo, redo and save.
 
 use lntrn_math::{Color, Rect, Vec2};
 use lntrn_ui::{FILL, ImageHandle, Sense, Ui};
-use sim::{MonsterKind, PropKind, Terrain};
+use sim::{MonsterKind, PersonKind, PropKind, Terrain};
 
 use crate::editor::{MapEditor, SIZE_MAX, Tool};
 use crate::palette::terrain_style;
@@ -24,6 +25,7 @@ pub enum Asked {
 pub struct Pictures {
     pub props: [Option<ImageHandle>; PropKind::ALL.len()],
     pub monsters: [Option<ImageHandle>; MonsterKind::ALL.len()],
+    pub people: [Option<ImageHandle>; PersonKind::ALL.len()],
 }
 
 pub const fn terrain_label(terrain: Terrain) -> &'static str {
@@ -46,6 +48,11 @@ pub const fn prop_label(kind: PropKind) -> &'static str {
         PropKind::HerbPurple => "Purple herb",
         PropKind::HerbCyan => "Cyan herb",
     }
+}
+
+/// A person's row: who they are and what they do.
+pub fn person_label(kind: PersonKind) -> String {
+    format!("{} the {}", kind.label(), kind.calling())
 }
 
 /// What a pick row shows beside its name.
@@ -161,6 +168,15 @@ pub fn draw(ui: &mut Ui, editor: &mut MapEditor, unsaved: bool, pictures: &Pictu
                 editor.tool = Tool::Spawn;
             }
         }
+
+        ui.heading("People");
+        for (kind, picture) in PersonKind::ALL.into_iter().zip(pictures.people) {
+            let picked = editor.person == kind && editor.tool == Tool::Person;
+            if pick_row(ui, &person_label(kind), picked, Shown::Picture(picture)) {
+                editor.person = kind;
+                editor.tool = Tool::Person;
+            }
+        }
     });
     asked
 }
@@ -227,6 +243,14 @@ mod tests {
     }
 
     #[test]
+    fn picking_a_person_takes_up_the_person_tool() {
+        let (mut h, mut editor) = (Harness::new(450.0, 2200.0), MapEditor::new());
+        frame(&mut h, &mut editor, false);
+        click(&mut h, &mut editor, false, "Odo the Guard");
+        assert_eq!((editor.person, editor.tool), (PersonKind::Guard, Tool::Person));
+    }
+
+    #[test]
     fn save_asks_only_when_there_is_something_to_save() {
         let (mut h, mut editor) = (Harness::new(450.0, 1800.0), MapEditor::new());
         frame(&mut h, &mut editor, false);
@@ -252,7 +276,8 @@ mod tests {
 
     #[test]
     fn every_ground_and_prop_has_a_row_with_its_own_name() {
-        let labels: Vec<&str> = Terrain::ALL.map(terrain_label).into_iter().chain(PropKind::ALL.map(prop_label)).chain(MonsterKind::ALL.map(MonsterKind::label)).chain(Tool::ALL.map(Tool::label)).collect();
+        let people = PersonKind::ALL.map(person_label);
+        let labels: Vec<&str> = Terrain::ALL.map(terrain_label).into_iter().chain(PropKind::ALL.map(prop_label)).chain(MonsterKind::ALL.map(MonsterKind::label)).chain(Tool::ALL.map(Tool::label)).chain(people.iter().map(String::as_str)).collect();
         let mut unique = labels.clone();
         unique.sort();
         unique.dedup();

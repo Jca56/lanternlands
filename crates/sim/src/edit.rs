@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::terrain::Terrain;
 use crate::monsters::MonsterKind;
+use crate::people::PersonKind;
 use crate::world::{Marker, PropKind, Tile, World};
 
 /// How many steps back the history goes.
@@ -240,12 +241,25 @@ pub fn set_marker(history: &mut History, world: &mut World, marker: Marker, x: i
     true
 }
 
-/// Make a tile the home of a kind of monster, or of none. `false`
-/// where there is no ground.
+/// Make a tile the home of a kind of monster, or of none. A tile is
+/// one's home at most: a person living there makes way. `false` where
+/// there is no ground.
 pub fn set_spawn(history: &mut History, world: &mut World, x: i32, y: i32, kind: Option<MonsterKind>) -> bool {
     let has_ground = world.terrain(x, y).is_some();
     if has_ground {
-        history.set(world, x, y, Tile { spawn: kind, ..world.tile(x, y) });
+        let tile = world.tile(x, y);
+        history.set(world, x, y, Tile { spawn: kind, person: tile.person.filter(|_| kind.is_none()), ..tile });
+    }
+    has_ground
+}
+
+/// Make a tile the home of a person, or of nobody. A monster living
+/// there makes way. `false` where there is no ground.
+pub fn set_person(history: &mut History, world: &mut World, x: i32, y: i32, kind: Option<PersonKind>) -> bool {
+    let has_ground = world.terrain(x, y).is_some();
+    if has_ground {
+        let tile = world.tile(x, y);
+        history.set(world, x, y, Tile { person: kind, spawn: tile.spawn.filter(|_| kind.is_none()), ..tile });
     }
     has_ground
 }

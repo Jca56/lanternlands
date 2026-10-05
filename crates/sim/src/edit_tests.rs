@@ -80,12 +80,12 @@ fn painting_keeps_what_stands_and_erasing_takes_it() {
     world.place_prop(PropKind::Tree, 5, 5);
     let mut history = History::new();
     paint(&mut history, &mut world, (5.5, 5.5), 3, Some(Sand));
-    assert_eq!(world.tile(5, 5), Tile { terrain: Some(Sand), prop: Some(PropKind::Tree), marker: None, spawn: None });
+    assert_eq!(world.tile(5, 5), Tile { terrain: Some(Sand), prop: Some(PropKind::Tree), marker: None, spawn: None, person: None });
     paint(&mut history, &mut world, (5.5, 5.5), 1, None);
     assert_eq!(world.tile(5, 5), Tile::default());
     // Undo brings the tree back with its ground.
     history.undo(&mut world);
-    assert_eq!(world.tile(5, 5), Tile { terrain: Some(Grass), prop: Some(PropKind::Tree), marker: None, spawn: None });
+    assert_eq!(world.tile(5, 5), Tile { terrain: Some(Grass), prop: Some(PropKind::Tree), marker: None, spawn: None, person: None });
 }
 
 #[test]
@@ -309,7 +309,7 @@ fn the_tools_leave_a_marker_where_it_is_and_the_eraser_takes_it() {
     place(&mut history, &mut world, 4, 4, PropKind::HerbCyan);
     fill(&mut history, &mut world, 4, 4, Dirt);
     remove(&mut history, &mut world, 4, 4);
-    assert_eq!(world.tile(4, 4), Tile { terrain: Some(Dirt), prop: None, marker: Some(Marker::PlayerStart), spawn: None });
+    assert_eq!(world.tile(4, 4), Tile { terrain: Some(Dirt), prop: None, marker: Some(Marker::PlayerStart), spawn: None, person: None });
     paint(&mut history, &mut world, (4.5, 4.5), 1, None);
     assert_eq!(world.marker(Marker::PlayerStart), None);
     history.undo(&mut world);
@@ -334,4 +334,35 @@ fn a_monsters_home_is_set_and_taken_away_each_as_a_step() {
     assert_eq!(world.spawns(), vec![]);
     history.undo(&mut world);
     assert_eq!(world.spawns(), vec![(Goblin, 3, 3)]);
+}
+
+#[test]
+fn a_persons_home_is_a_step_too_and_a_tile_is_home_to_one() {
+    use crate::monsters::MonsterKind::Goblin;
+    use crate::people::PersonKind::Smith;
+    let mut world = field();
+    let mut history = History::new();
+    history.begin();
+    assert!(set_spawn(&mut history, &mut world, 3, 3, Some(Goblin)));
+    history.commit();
+    // A person moving in sends the goblin packing, in the one step.
+    history.begin();
+    assert!(set_person(&mut history, &mut world, 3, 3, Some(Smith)));
+    assert!(!set_person(&mut history, &mut world, -5, 3, Some(Smith)), "no ground there");
+    history.commit();
+    assert_eq!((world.person_at(3, 3), world.spawn_at(3, 3)), (Some(Smith), None));
+    history.undo(&mut world);
+    assert_eq!((world.person_at(3, 3), world.spawn_at(3, 3)), (None, Some(Goblin)));
+    history.redo(&mut world);
+    // And a goblin moving in does the same to them.
+    history.begin();
+    assert!(set_spawn(&mut history, &mut world, 3, 3, Some(Goblin)));
+    history.commit();
+    assert_eq!((world.people(), world.spawns()), (vec![], vec![(Goblin, 3, 3)]));
+    // Taking away a home nobody has leaves whoever else lives there
+    // alone, and is no step at all.
+    history.begin();
+    assert!(set_person(&mut history, &mut world, 3, 3, None));
+    assert!(!history.commit());
+    assert_eq!(world.spawn_at(3, 3), Some(Goblin));
 }

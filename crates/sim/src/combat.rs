@@ -47,9 +47,9 @@ pub(crate) fn in_reach(a: (i32, i32), b: (i32, i32)) -> bool {
 }
 
 /// The eight ways a step can go.
-const STEPS: [(i32, i32); 8] = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1)];
+pub(crate) const STEPS: [(i32, i32); 8] = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1)];
 
-fn apart(a: (i32, i32), b: (i32, i32)) -> i32 {
+pub(crate) fn apart(a: (i32, i32), b: (i32, i32)) -> i32 {
     (a.0 - b.0).abs().max((a.1 - b.1).abs())
 }
 
@@ -119,9 +119,9 @@ impl Sim {
     }
 
     /// Whether somebody other than monster `but` stands on `tile`: the
-    /// player, or another living monster.
+    /// player, a person, or another living monster.
     fn taken(&self, tile: (i32, i32), but: usize) -> bool {
-        tile == self.player.tile || self.monsters.iter().enumerate().any(|(i, m)| i != but && m.alive() && m.tile == tile)
+        tile == self.player.tile || self.person_on(tile) || self.monsters.iter().enumerate().any(|(i, m)| i != but && m.alive() && m.tile == tile)
     }
 
     /// Gain experience, and say so.
@@ -282,6 +282,8 @@ impl Sim {
             monster.cooldown = stats.attack_ticks;
             monster.swung_at = Some(now);
             self.last_fight = Some(now);
+            // Nobody goes on talking with a club coming at them.
+            self.player.talk = None;
             // Set upon while doing nothing, the player fights back.
             if !self.player.busy() {
                 self.player.activity = Some(Activity::Fighting { target: i, cooldown: 0 });
