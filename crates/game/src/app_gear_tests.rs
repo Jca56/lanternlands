@@ -7,12 +7,13 @@ use super::frame::{body, count, snap};
 use super::play::{pass, playing, pose_of};
 use super::*;
 use crate::scene::{GEAR_ORDER, metal_tint};
+use crate::wear::grip_tint;
 
 const SET: [Item; 7] = [Item::BronzeSword, Item::BronzeShield, Item::BronzeHelmet, Item::BronzeChestplate, Item::BronzeGreaves, Item::BronzeGauntlets, Item::BronzeBoots];
 /// The bronze a piece's main grey comes out as, and the player's own
 /// tunic blue.
 const BRONZE: [u8; 3] = [0xb6, 0x82, 0x49];
-const TUNIC: [u8; 3] = [0x55, 0x72, 0xac];
+const TUNIC: [u8; 3] = [0x44, 0x53, 0x65];
 
 /// The game with the whole bronze set in the bag, and nothing about to
 /// bother the player.
@@ -101,13 +102,21 @@ fn what_is_worn_is_drawn_in_layers_over_the_body_in_its_metals_colour() {
         let layers: Vec<_> = extras.iter().filter(|p| p.ground == ground).collect();
         assert!(layers.iter().all(|p| p.flip == flip));
         assert!(layers.len() >= 7, "{facing:?}: {} layers", layers.len());
-        assert!(layers.iter().filter(|p| p.sprite != body).all(|p| p.tint == bronze), "gear is tinted, the body is not");
+        // The hand over the sword's grip is one more layer, in its
+        // gauntlet's colour: there from the front and the side, where
+        // the sword is in front of the body.
+        let grip = game.look.grip.sprite(facing, Pose::Idle).map(|(id, _)| id);
+        assert_eq!(grip.is_some(), facing != Facing::Up, "{facing:?}");
+        assert!(layers.iter().filter(|p| p.sprite != body && Some(p.sprite) != grip).all(|p| p.tint == bronze), "gear is tinted, the body is not");
+        assert!(layers.iter().filter(|p| Some(p.sprite) == grip).all(|p| p.tint == grip_tint(Some(bronze))));
         assert_eq!(extras[at].tint, [1.0; 4]);
         // Over the body in the order that reads right; the shield shows
         // from behind it when the player is seen from the back or side.
         let over: Vec<_> = extras[at + 1..].iter().map(|p| p.sprite).collect();
-        let expected: Vec<_> = GEAR_ORDER.iter().filter_map(|slot| game.look.gear(*slot).over.sprite(facing, Pose::Idle)).map(|(id, _)| id).collect();
+        let expected: Vec<_> = GEAR_ORDER.iter().filter_map(|slot| game.look.gear(*slot).over.sprite(facing, Pose::Idle)).map(|(id, _)| id).chain(grip).collect();
         assert_eq!(over, expected, "{facing:?}");
+        // The sword itself is behind the body when seen from the back.
+        assert_eq!(game.look.gear(Slot::Weapon).under.sprite(facing, Pose::Idle).is_some(), facing == Facing::Up, "{facing:?}");
         let behind = game.look.gear(Slot::Shield).under.sprite(facing, Pose::Idle);
         assert_eq!(behind.is_some(), facing != Facing::Down, "{facing:?}");
         if let Some((shield, _)) = behind {
@@ -130,7 +139,7 @@ fn the_armoured_player_is_bronze_where_they_were_blue_from_every_side() {
     let Some(plain) = snap("frame-gear-none", &mut h, &mut shell, &mut game) else { return };
     let px = game.camera.tile_px(game.scale);
     let feet = game.camera.to_screen(game.player_ground(), game.view, game.scale);
-    let figure = Rect::new(feet - Vec2::new(px * 0.7, px * 1.6), feet + Vec2::new(px * 0.7, px * 0.3));
+    let figure = Rect::new(feet - Vec2::new(px * 0.9, px * 2.0), feet + Vec2::new(px * 0.9, px * 0.3));
     assert!(count(&plain, figure, TUNIC, 4) > 1000, "blue to begin with: {}", count(&plain, figure, TUNIC, 4));
     assert_eq!(count(&plain, figure, BRONZE, 6), 0);
     for slot in 0..SET.len() {

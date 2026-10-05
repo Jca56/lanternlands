@@ -5,3 +5,6 @@ Notes.md
 /art/concepts/style-test-03*
 /art/concepts/style-test-04*
 /art/concepts/style-test-05*
+__pycache__/
+# The player sheet as Lantern Studio keeps it: big, and art/rig can draw it again.
+/art/sprites/player-02.lstudio

@@ -3,7 +3,7 @@
 
 use lntrn_math::{Color, Rect, Vec2};
 use lntrn_ui::{AreaCx, CursorIcon, Dialog, Key, Response, Sense, ShellRequest, Ui};
-use sim::{Ability, Activity, Event, Marker, TICK_SECONDS};
+use sim::{Ability, Activity, Event, Marker, Slot, TICK_SECONDS};
 
 use super::{AUTOSAVE_EVERY, Game, Mode};
 use crate::anim::{Facing, Pose};
@@ -15,7 +15,7 @@ use crate::hud::{Press, Sight};
 use crate::making;
 use crate::scene::{GEAR_ORDER, Placed, metal_tint};
 use crate::talk;
-use crate::wear::dress;
+use crate::wear::{dress, grip_tint};
 
 /// How much one notch of the wheel zooms.
 const ZOOM_PER_NOTCH: f64 = 1.15;
@@ -464,7 +464,10 @@ impl Game {
         // in its metal's colour.
         let worn = |slot| self.sim.gear.worn(slot).and_then(|item| Some((self.look.gear(slot), metal_tint(item.metal()?))));
         let worn: Vec<_> = GEAR_ORDER.into_iter().filter_map(worn).collect();
-        dress(&mut extras, self.player_ground(), self.facing, pose, walk, &worn);
+        // With a weapon in it, their hand is drawn again over the grip.
+        let gauntlet = self.sim.gear.worn(Slot::Hands).and_then(|item| item.metal()).map(metal_tint);
+        let grip = self.sim.gear.worn(Slot::Weapon).map(|_| (&self.look.grip, grip_tint(gauntlet)));
+        dress(&mut extras, self.player_ground(), self.facing, pose, walk, &worn, grip);
         extras
     }
 }

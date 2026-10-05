@@ -261,11 +261,11 @@ fn plain_grass_is_one_flat_colour() {
     assert!(plain > (SIZE[0] * SIZE[1] * 2 / 3) as usize, "only {plain} pixels of plain grass");
 }
 
-/// Colours of the player's drawing, as it was drawn in Lantern Studio.
-const TUNIC: u32 = 0x5572ac;
-const SKIN: u32 = 0xe0bd97;
-const HAIR: u32 = 0x68411f;
-const OUTLINE: u32 = 0x271a1c;
+/// Colours of the player's drawing, as Lantern Studio wrote it out.
+const TUNIC: u32 = 0x445365;
+const FACE: u32 = 0xab8364;
+const HAIR: u32 = 0x221713;
+const TROUSERS: u32 = 0x332721;
 
 #[test]
 fn the_player_is_drawn_on_their_ground_in_their_own_colours() {
@@ -276,10 +276,10 @@ fn the_player_is_drawn_on_their_ground_in_their_own_colours() {
     let Some(shot) = shoot_scene("player", ground + Vec2::new(0.0, -0.5), 1.0, true, placed) else { return };
     // Points of the drawing from its anchor (between the feet), in
     // tiles: 200 of the sheet's pixels each.
-    close(shot.at(ground + Vec2::new(0.0, -0.45)), TUNIC, 2, "the tunic");
-    close(shot.at(ground + Vec2::new(0.0, -0.78)), SKIN, 2, "the face, under the eyes");
-    close(shot.at(ground + Vec2::new(0.0, -1.18)), HAIR, 2, "the hair");
-    close(shot.at(ground + Vec2::new(-0.09, -0.875)), OUTLINE, 3, "the left eye");
+    close(shot.at(ground + Vec2::new(-0.3, -1.1)), TUNIC, 2, "the tunic, beside the strap");
+    close(shot.at(ground + Vec2::new(0.0, -1.46)), FACE, 2, "the face, between the eyes");
+    close(shot.at(ground + Vec2::new(0.05, -1.695)), HAIR, 2, "the hair");
+    close(shot.at(ground + Vec2::new(-0.18, -0.56)), TROUSERS, 2, "a trouser leg");
     close(shot.at(ground + Vec2::new(0.6, -0.5)), STUDIO_GRASS, 1, "the grass beside them");
 }
 
@@ -290,10 +290,10 @@ fn the_side_view_faces_right_and_its_mirror_faces_left() {
     for (name, flip) in [("player-right", false), ("player-left", true)] {
         let placed = |set: &SpriteSet| vec![Placed { sprite: set.id("player_side_idle").expect("there"), ground, flip, tint: [1.0; 4] }];
         let Some(shot) = shoot_scene(name, ground + Vec2::new(0.0, -0.5), 1.0, true, placed) else { return };
-        // The eye is on the side they face; the back of the head is hair.
-        let front = if flip { -0.17 } else { 0.17 };
-        close(shot.at(ground + Vec2::new(front, -0.875)), OUTLINE, 3, &format!("{name}: the eye"));
-        close(shot.at(ground + Vec2::new(-front, -0.875)), HAIR, 2, &format!("{name}: the back of the head"));
+        // The face is on the side they face; the back of the head is hair.
+        let front = if flip { -1.0 } else { 1.0 };
+        close(shot.at(ground + Vec2::new(0.07 * front, -1.425)), FACE, 2, &format!("{name}: the cheek"));
+        close(shot.at(ground + Vec2::new(-0.12 * front, -1.56)), HAIR, 2, &format!("{name}: the back of the head"));
     }
 }
 
@@ -306,7 +306,7 @@ fn a_ghost_lets_the_ground_show_through() {
     // Half tunic, half grass, blended in the art's own numbers.
     let (tunic, grass) = (bytes_of_hex(TUNIC), bytes_of_hex(STUDIO_GRASS));
     let half = [0, 1, 2].map(|c| (tunic[c] as u32 + grass[c] as u32) / 2);
-    close(shot.at(ground + Vec2::new(0.0, -0.45)), half[0] << 16 | half[1] << 8 | half[2], 3, "the ghost's tunic over grass");
+    close(shot.at(ground + Vec2::new(-0.3, -1.1)), half[0] << 16 | half[1] << 8 | half[2], 3, "the ghost's tunic over grass");
 }
 
 const COPPER: u32 = 0xc78246;

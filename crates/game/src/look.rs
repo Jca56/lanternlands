@@ -34,6 +34,12 @@ pub struct Look {
     people: [WalkSprites; PersonKind::ALL.len()],
     /// What gear is drawn with, slot by slot.
     gear: [GearSprites; Slot::ALL.len()],
+    /// The same gear as it was drawn for the first, shorter body, which
+    /// the people of the world still have.
+    old_gear: [GearSprites; Slot::ALL.len()],
+    /// The player's hand closed over what it holds: drawn after the
+    /// weapon, so the fingers are in front of its grip.
+    pub grip: WalkSprites,
 }
 
 /// The drawings of what is worn in one slot, laid out like the player's
@@ -52,6 +58,11 @@ pub const fn metal_tint(metal: Metal) -> [f32; 4] {
     match metal {
         Metal::Bronze => [0.878, 0.627, 0.353, 1.0],
     }
+}
+
+/// The gear sheets whose names start with `stem`, slot by slot.
+fn gear_called(set: &SpriteSet, stem: &str) -> [GearSprites; Slot::ALL.len()] {
+    Slot::ALL.map(|slot| GearSprites { over: WalkSprites::find(set, &format!("{stem}_{}", slot.name())), under: WalkSprites::find(set, &format!("{stem}_{}_under", slot.name())) })
 }
 
 /// The name of a person's sheet in the assets.
@@ -75,7 +86,9 @@ impl Look {
             player: WalkSprites::find(set, "player"),
             goblin: WalkSprites::find(set, "goblin"),
             people: PersonKind::ALL.map(|kind| WalkSprites::find(set, &person_sheet(kind))),
-            gear: Slot::ALL.map(|slot| GearSprites { over: WalkSprites::find(set, &format!("gear_{}", slot.name())), under: WalkSprites::find(set, &format!("gear_{}_under", slot.name())) }),
+            gear: gear_called(set, "gear"),
+            old_gear: gear_called(set, "old_gear"),
+            grip: WalkSprites::find(set, "gear_grip"),
         }
     }
 
@@ -106,6 +119,11 @@ impl Look {
     /// The drawings of what is worn in a slot.
     pub fn gear(&self, slot: Slot) -> &GearSprites {
         &self.gear[Slot::ALL.iter().position(|s| *s == slot).expect("every slot is listed")]
+    }
+
+    /// The same, as drawn for the body the people of the world have.
+    pub fn old_gear(&self, slot: Slot) -> &GearSprites {
+        &self.old_gear[Slot::ALL.iter().position(|s| *s == slot).expect("every slot is listed")]
     }
 
     /// The drawings a person is shown with.

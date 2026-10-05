@@ -62,8 +62,8 @@ impl Game {
             }
             let pose = Pose::at(person.moved(), self.sim.ticks, into);
             let facing = self.person_facing.get(i).copied().unwrap_or_default();
-            let worn: Vec<_> = person_wear(person.kind).iter().map(|&(slot, tint)| (self.look.gear(slot), tint)).collect();
-            dress(extras, grounds[i], facing, pose, self.look.person(person.kind), &worn);
+            let worn: Vec<_> = person_wear(person.kind).iter().map(|&(slot, tint)| (self.look.old_gear(slot), tint)).collect();
+            dress(extras, grounds[i], facing, pose, self.look.person(person.kind), &worn, None);
         }
     }
 }

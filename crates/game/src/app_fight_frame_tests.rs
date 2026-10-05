@@ -51,7 +51,7 @@ fn a_fight_shows_the_goblin_its_bar_and_the_players_health() {
     assert!(count(&image, mine, HURT, 6) > 40, "red over the player: {}", count(&image, mine, HURT, 6));
     assert_eq!(count(&image, its, HURT, 6), 0, "and none over the goblin");
     // Under it, over their head, their own bar: some left, some lost.
-    let own = Rect::from_center_size(game.camera.to_screen(game.player_ground() - Vec2::new(0.0, 1.6), game.view, game.scale), Vec2::new(px * 1.1, px * 0.3));
+    let own = Rect::from_center_size(game.camera.to_screen(game.player_ground() - Vec2::new(0.0, 1.95), game.view, game.scale), Vec2::new(px * 1.1, px * 0.3));
     assert!(count(&image, own, HEALTH_LEFT, 2) > 300 && count(&image, own, HEALTH_LOST, 2) > 50, "the player's bar: left {} lost {}", count(&image, own, HEALTH_LEFT, 2), count(&image, own, HEALTH_LOST, 2));
     // The goblin they are fighting is ringed in red on the ground.
     let feet = Rect::from_center_size(game.camera.to_screen(game.monster_grounds()[0], game.view, game.scale), Vec2::new(px, px));
@@ -79,7 +79,7 @@ fn a_goblin_at_peace_has_no_bar_and_nothing_floats() {
     assert_eq!(count(&image, around(&game, at, 2.4), HEALTH_LOST, 2), 0);
     // Whole and at peace, the player has no bar over their head either.
     let px = game.camera.tile_px(game.scale);
-    let own = Rect::from_center_size(game.camera.to_screen(game.player_ground() - Vec2::new(0.0, 1.6), game.view, game.scale), Vec2::new(px * 1.1, px * 0.3));
+    let own = Rect::from_center_size(game.camera.to_screen(game.player_ground() - Vec2::new(0.0, 1.95), game.view, game.scale), Vec2::new(px * 1.1, px * 0.3));
     assert_eq!(count(&image, own, HEALTH_LEFT, 2), 0);
     // Full health: the corner bar is all green.
     let corner = Rect::new(game.view.min, game.view.min + Vec2::new(400.0, 100.0));

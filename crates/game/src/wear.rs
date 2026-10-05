@@ -7,6 +7,17 @@ use sim::{Metal, PersonKind, Slot};
 use crate::anim::{Facing, Pose, WalkSprites};
 use crate::scene::{GearSprites, Placed, metal_tint};
 
+/// The player's skin, as their sheet has it, and how light the plain
+/// grey of a gear sheet is: the hand over a grip is drawn white, so it
+/// takes either colour whole.
+pub const SKIN: [f32; 4] = [181.0 / 255.0, 140.0 / 255.0, 105.0 / 255.0, 1.0];
+const GEAR_GREY: f32 = 207.0 / 255.0;
+
+/// The colour of the hand over a grip: the gauntlet it wears, or skin.
+pub fn grip_tint(gauntlet: Option<[f32; 4]>) -> [f32; 4] {
+    gauntlet.map_or(SKIN, |[r, g, b, a]| [r * GEAR_GREY, g * GEAR_GREY, b * GEAR_GREY, a])
+}
+
 /// The colours of what people wear that is no metal.
 const LEATHER: [f32; 4] = [0.471, 0.322, 0.188, 1.0];
 const DARK_LEATHER: [f32; 4] = [0.290, 0.204, 0.137, 1.0];
@@ -26,8 +37,8 @@ pub const fn person_wear(kind: PersonKind) -> &'static [(Slot, [f32; 4])] {
 
 /// Stand someone in `extras` in layers: what they wear that shows from
 /// behind them, their body, then what they wear over it, each piece in
-/// its own colour.
-pub fn dress(extras: &mut Vec<Placed>, ground: Vec2, facing: Facing, pose: Pose, body: &WalkSprites, worn: &[(&GearSprites, [f32; 4])]) {
+/// its own colour, and last their `grip`: the hand over what it holds.
+pub fn dress(extras: &mut Vec<Placed>, ground: Vec2, facing: Facing, pose: Pose, body: &WalkSprites, worn: &[(&GearSprites, [f32; 4])], grip: Option<(&WalkSprites, [f32; 4])>) {
     let mut put = |sprites: &WalkSprites, tint| {
         if let Some((sprite, flip)) = sprites.sprite(facing, pose) {
             extras.push(Placed { sprite, ground, flip, tint });
@@ -39,5 +50,8 @@ pub fn dress(extras: &mut Vec<Placed>, ground: Vec2, facing: Facing, pose: Pose,
     put(body, [1.0; 4]);
     for &(gear, tint) in worn {
         put(&gear.over, tint);
+    }
+    if let Some((sprites, tint)) = grip {
+        put(sprites, tint);
     }
 }

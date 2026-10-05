@@ -1,0 +1,34 @@
+{
+  "doc": "art/sprites/player-02.lstudio",
+  "sheets": {
+    "shield_under": "L2",
+    "weapon_under": "L3",
+    "body": "L5",
+    "legs": "L6",
+    "feet": "L7",
+    "chest": "L8",
+    "hands": "L9",
+    "head": "L10",
+    "shield": "L11",
+    "weapon": "L12",
+    "grip": "L14"
+  },
+  "graded": {
+    "body": "L4",
+    "grip": "L13"
+  },
+  "stamps_group": "L15",
+  "stamps": {
+    "down": {
+      "A": "L63",
+      "B": "L64"
+    },
+    "up": {
+      "A": "L65",
+      "B": "L66"
+    },
+    "side": {
+      "B": "L67"
+    }
+  }
+}

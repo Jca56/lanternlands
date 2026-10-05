@@ -14,9 +14,9 @@ tile_px = 200
 
 # The player on foot. The side view faces right; left is its mirror.
 [grids.player]
-file = "sprites/player-01.png"
-cell = [240, 320]
-anchor = [120, 286]
+file = "sprites/player-02.png"
+cell = [360, 480]
+anchor = [180, 440]
 rows = ["down", "up", "side"]
 columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
 
@@ -29,58 +29,134 @@ rows = ["down", "up", "side"]
 columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
 
 # What the player wears, each laid out like the player's own sheet and
-# drawn over it (or, for the one called under, behind it). They are
-# drawn in plain greys and coloured by the metal they are made of.
+# drawn over it (or, for those called under, behind it: the shield from
+# the back and the side, the sword from the back). They are drawn in
+# plain greys and coloured by the metal they are made of.
 [grids.gear_shield_under]
+file = "sprites/gear-02-shield-under.png"
+cell = [360, 480]
+anchor = [180, 440]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_weapon_under]
+file = "sprites/gear-02-weapon-under.png"
+cell = [360, 480]
+anchor = [180, 440]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_legs]
+file = "sprites/gear-02-legs.png"
+cell = [360, 480]
+anchor = [180, 440]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_feet]
+file = "sprites/gear-02-feet.png"
+cell = [360, 480]
+anchor = [180, 440]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_body]
+file = "sprites/gear-02-body.png"
+cell = [360, 480]
+anchor = [180, 440]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_hands]
+file = "sprites/gear-02-hands.png"
+cell = [360, 480]
+anchor = [180, 440]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_head]
+file = "sprites/gear-02-head.png"
+cell = [360, 480]
+anchor = [180, 440]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_shield]
+file = "sprites/gear-02-shield.png"
+cell = [360, 480]
+anchor = [180, 440]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.gear_weapon]
+file = "sprites/gear-02-weapon.png"
+cell = [360, 480]
+anchor = [180, 440]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+# The player's hand closed over what it holds, drawn after the weapon so
+# the fingers are in front of the grip. It is drawn white and coloured
+# by the game: their skin, or the metal of their gauntlets.
+[grids.gear_grip]
+file = "sprites/gear-02-grip.png"
+cell = [360, 480]
+anchor = [180, 440]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+# The same gear as it was drawn for the first, shorter body. The people
+# of the world still have that body, so this is what they wear.
+[grids.old_gear_shield_under]
 file = "sprites/gear-shield-under.png"
 cell = [240, 320]
 anchor = [120, 286]
 rows = ["down", "up", "side"]
 columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
 
-[grids.gear_legs]
+[grids.old_gear_legs]
 file = "sprites/gear-legs.png"
 cell = [240, 320]
 anchor = [120, 286]
 rows = ["down", "up", "side"]
 columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
 
-[grids.gear_feet]
+[grids.old_gear_feet]
 file = "sprites/gear-feet.png"
 cell = [240, 320]
 anchor = [120, 286]
 rows = ["down", "up", "side"]
 columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
 
-[grids.gear_body]
+[grids.old_gear_body]
 file = "sprites/gear-body.png"
 cell = [240, 320]
 anchor = [120, 286]
 rows = ["down", "up", "side"]
 columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
 
-[grids.gear_hands]
+[grids.old_gear_hands]
 file = "sprites/gear-hands.png"
 cell = [240, 320]
 anchor = [120, 286]
 rows = ["down", "up", "side"]
 columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
 
-[grids.gear_head]
+[grids.old_gear_head]
 file = "sprites/gear-head.png"
 cell = [240, 320]
 anchor = [120, 286]
 rows = ["down", "up", "side"]
 columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
 
-[grids.gear_shield]
+[grids.old_gear_shield]
 file = "sprites/gear-shield.png"
 cell = [240, 320]
 anchor = [120, 286]
 rows = ["down", "up", "side"]
 columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
 
-[grids.gear_weapon]
+[grids.old_gear_weapon]
 file = "sprites/gear-weapon.png"
 cell = [240, 320]
 anchor = [120, 286]

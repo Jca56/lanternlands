@@ -41,9 +41,9 @@ const BAR_OVER: f64 = 1.3;
 const HEAD_OVER: f64 = 1.6;
 /// The same for the player, who is taller: their bar, what rises over
 /// it while it shows, and what rises from their head while it does not.
-const PLAYER_BAR_OVER: f64 = 1.6;
-const PLAYER_HEAD_OVER: f64 = 1.9;
-const PLAYER_HEAD: f64 = 1.45;
+const PLAYER_BAR_OVER: f64 = 1.95;
+const PLAYER_HEAD_OVER: f64 = 2.25;
+const PLAYER_HEAD: f64 = 1.8;
 
 const HEALTH_LEFT: Color = Color::hex(0x8fce5c);
 const HEALTH_LOST: Color = Color::hex(0x7a2e2a);
