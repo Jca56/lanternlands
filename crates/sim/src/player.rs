@@ -3,13 +3,13 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::abilities::Book;
+use crate::bank::Bank;
 use crate::combat::Grave;
 use crate::gear::Gear;
 use crate::items::{Inventory, Item};
 use crate::making::Station;
 use crate::potions::{Potion, Tonics};
 use crate::monsters::Monster;
-use crate::nodes::Node;
 use crate::path;
 use crate::people::{Person, Talk, people_of};
 use crate::rng::Rng;
@@ -43,6 +43,8 @@ pub struct Player {
     pub(crate) station: Option<(Station, (i32, i32))>,
     /// Who is talking to them, and how far into what they have to say.
     pub(crate) talk: Option<Talk>,
+    /// The tile of the bank chest they walked up to and have not left.
+    pub(crate) bank: Option<(i32, i32)>,
 }
 
 /// Something the player means to do once they are in reach of it.
@@ -87,6 +89,8 @@ pub enum Event {
     LevelUp { skill: Skill, level: u8 },
     /// There was no room for what would have been got.
     InventoryFull,
+    /// There was no slot in the bank for what would have gone in.
+    BankFull,
     /// The node on `at` has given all it had.
     Spent { at: (i32, i32) },
     /// The node asks a level of a skill the player does not have.
@@ -161,6 +165,8 @@ pub struct Sim {
     pub inventory: Inventory,
     /// What they wear and hold.
     pub gear: Gear,
+    /// What they own and do not carry.
+    pub bank: Bank,
     /// How many of the world's ticks have passed.
     pub ticks: u64,
     /// Nodes that are not whole, by tile.
@@ -209,9 +215,9 @@ impl Sim {
     /// The player starts where the map says, whole and with nothing.
     pub fn new(world: World) -> Sim {
         let tile = start_tile(&world);
-        let player = Player { tile, from: tile, steps: 0, health: 0, swung: false, path: VecDeque::new(), goal: None, intent: None, activity: None, station: None, talk: None };
+        let player = Player { tile, from: tile, steps: 0, health: 0, swung: false, path: VecDeque::new(), goal: None, intent: None, activity: None, station: None, talk: None, bank: None };
         let (monsters, people) = (monsters_of(&world), people_of(&world));
-        let mut sim = Sim { world, player, skills: Skills::default(), inventory: Inventory::default(), gear: Gear::default(), ticks: 0, worked: HashMap::new(), monsters, people, grave: None, last_fight: None, book: Book::default(), tonics: Tonics::default(), rng: Rng::new(0x5EED), events: Vec::new() };
+        let mut sim = Sim { world, player, skills: Skills::default(), inventory: Inventory::default(), gear: Gear::default(), bank: Bank::default(), ticks: 0, worked: HashMap::new(), monsters, people, grave: None, last_fight: None, book: Book::default(), tonics: Tonics::default(), rng: Rng::new(0x5EED), events: Vec::new() };
         sim.player.health = sim.max_health();
         sim
     }
@@ -224,23 +230,6 @@ impl Sim {
     /// What happened since this was last asked.
     pub fn take_events(&mut self) -> Vec<Event> {
         std::mem::take(&mut self.events)
-    }
-
-    /// The node on a tile, if what stands there is one.
-    pub fn node_at(&self, tile: (i32, i32)) -> Option<Node> {
-        self.world.prop_at(tile.0, tile.1)?.kind.node()
-    }
-
-    /// How many more a node on a tile will give; `None` where there is
-    /// no node.
-    pub fn node_left(&self, tile: (i32, i32)) -> Option<u8> {
-        let node = self.node_at(tile)?;
-        Some(self.worked.get(&tile).map_or(node.yields, |w| w.left))
-    }
-
-    /// Whether the node on a tile has given all it had, for now.
-    pub fn is_spent(&self, tile: (i32, i32)) -> bool {
-        self.node_left(tile) == Some(0)
     }
 
     /// Whether a tick of the world still to come will change something
@@ -257,10 +246,10 @@ impl Sim {
         self.monsters.iter().any(|m| m.alive() && (m.moved() || m.swung_at == Some(self.ticks))) || self.people.iter().any(Person::moved)
     }
 
-    /// What a press on a tile means: use what is there (a node, the
-    /// grave), or walk there.
+    /// What a press on a tile means: use what is there (a node, a
+    /// station, the bank, the grave), or walk there.
     pub fn click(&mut self, tile: (i32, i32)) {
-        let usable = self.node_at(tile).is_some() || self.station_at(tile).is_some() || self.grave.as_ref().is_some_and(|g| g.tile == tile);
+        let usable = self.node_at(tile).is_some() || self.station_at(tile).is_some() || self.bank_at(tile) || self.grave.as_ref().is_some_and(|g| g.tile == tile);
         self.walk_to(tile);
         if usable {
             // To it, and then to use it.
@@ -268,13 +257,13 @@ impl Sim {
         }
     }
 
-    /// The tile of what the player is set on using: a node, a station
-    /// or the grave they are on their way to, the node they are working,
-    /// or the station they stand at.
+    /// The tile of what the player is set on using: a node, a station,
+    /// the bank or the grave they are on their way to, the node they are
+    /// working, or the station or bank chest they stand at.
     pub fn using(&self) -> Option<(i32, i32)> {
         match (self.player.intent, self.player.activity) {
             (Some(Intent::Use(at)), _) | (_, Some(Activity::Working { at, .. } | Activity::Making { at, .. })) => Some(at),
-            _ => self.player.station.map(|(_, at)| at),
+            _ => self.player.station.map(|(_, at)| at).or(self.player.bank),
         }
     }
 
@@ -287,6 +276,7 @@ impl Sim {
         self.player.activity = None;
         self.player.station = None;
         self.player.talk = None;
+        self.player.bank = None;
     }
 
     /// Whether a living monster stands on `tile`.
@@ -313,6 +303,7 @@ impl Sim {
         self.player.activity = None;
         self.player.station = None;
         self.player.talk = None;
+        self.player.bank = None;
     }
 
     /// The world changed under the player (the map was edited): if they
@@ -387,6 +378,10 @@ impl Sim {
             self.events.push(Event::AtStation { station });
             return;
         }
+        if self.bank_at(at) {
+            self.player.bank = Some(at);
+            return;
+        }
         // A node that is in the way is worked from beside it; one that
         // is not (a herb) can be worked from on top of it too.
         let Some(node) = self.node_at(at).filter(|_| (dx, dy) != (0, 0) || self.world.walkable(at.0, at.1)) else {
@@ -400,56 +395,6 @@ impl Sim {
             self.events.push(Event::InventoryFull);
         } else {
             self.player.activity = Some(Activity::Working { at, swing: 0 });
-        }
-    }
-
-    /// How many ticks a swing at a node takes the player: fewer with
-    /// the right tool in the bag, and never less than one.
-    pub fn swing_ticks(&self, node: &Node) -> u32 {
-        let quicker = match node.skill {
-            Skill::Mining => self.inventory.slots().iter().flatten().map(|stack| stack.item.mining_speed()).max().unwrap_or(0),
-            _ => 0,
-        };
-        node.swing_ticks.saturating_sub(quicker).max(1)
-    }
-
-    /// A tick of work: when a swing is done, roll for what it got.
-    fn work(&mut self) {
-        let Some(Activity::Working { at, swing }) = self.player.activity else {
-            return;
-        };
-        let Some(node) = self.node_at(at).filter(|_| !self.is_spent(at)) else {
-            // It went from under them: edited away, or spent.
-            self.player.activity = None;
-            return;
-        };
-        if swing + 1 < self.swing_ticks(&node) {
-            self.player.activity = Some(Activity::Working { at, swing: swing + 1 });
-            return;
-        }
-        self.player.activity = Some(Activity::Working { at, swing: 0 });
-        self.player.swung = true;
-        let hit = self.rng.chance(node.chance_at(self.skills.level(node.skill)));
-        self.events.push(Event::Swing { at, hit });
-        if !hit {
-            return;
-        }
-        if self.inventory.add(node.item, 1) > 0 {
-            self.events.push(Event::InventoryFull);
-            self.player.activity = None;
-            return;
-        }
-        self.events.push(Event::Got { item: node.item, count: 1 });
-        self.gain(node.skill, node.xp);
-        let worked = self.worked.entry(at).or_insert(Worked { left: node.yields, back_at: None });
-        worked.left -= 1;
-        if worked.left == 0 {
-            worked.back_at = Some(self.ticks + node.respawn_ticks);
-            self.events.push(Event::Spent { at });
-            self.player.activity = None;
-        } else if !self.inventory.has_room_for(node.item) {
-            self.events.push(Event::InventoryFull);
-            self.player.activity = None;
         }
     }
 

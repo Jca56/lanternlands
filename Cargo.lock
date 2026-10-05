@@ -176,6 +176,7 @@ dependencies = [
  "lntrn-data",
  "lntrn-image",
  "lntrn-math",
+ "lntrn-props",
  "lntrn-render",
  "lntrn-sys",
  "lntrn-ui",

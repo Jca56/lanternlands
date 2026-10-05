@@ -263,14 +263,11 @@ fn the_editor_lists_the_people_and_shows_a_ghost_where_one_lives() {
     let (x, y) = game.sim.player.tile;
     assert!(game.sim.world.set_person(x + 2, y, Some(PersonKind::Herbalist)));
     key(&mut h, &mut shell, &mut game, Key::F(2), Modifiers::NONE);
-    h.move_to(shell.screen.layout_of(shell.screen.target(View::Editor).unwrap()).unwrap().rect.center());
-    h.wheel(-60.0);
-    turn(&mut h, &mut shell, &mut game);
-    turn(&mut h, &mut shell, &mut game);
+    panel_tab(&mut h, &mut shell, &mut game, 2);
     let Some(image) = snap("frame-editor-people", &mut h, &mut shell, &mut game) else { return };
     // Her green tunic is in her row, and nobody else's.
     const GREEN: [u8; 3] = [0x4b, 0x7f, 0x39];
-    let row = |kind| h.rect_of(body(&shell, View::Editor).with("map editor").with(&crate::panel::person_label(kind))).expect("a row for them");
+    let row = |kind| h.rect_of(body(&shell, View::Editor).with("map editor").with(panel::PEOPLE).with(&panel::person_label(kind))).expect("a row for them");
     assert!(count(&image, row(PersonKind::Herbalist), GREEN, 8) > 40, "her picture is in her row: {}", count(&image, row(PersonKind::Herbalist), GREEN, 8));
     assert_eq!(count(&image, row(PersonKind::Smith), GREEN, 8), 0);
     // The ghost on her home: something drawn there, thinned by the grass behind it.

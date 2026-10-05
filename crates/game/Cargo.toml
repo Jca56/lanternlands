@@ -16,6 +16,7 @@ lntrn-core.workspace = true
 lntrn-image.workspace = true
 lntrn-sys.workspace = true
 lntrn-data.workspace = true
+lntrn-props.workspace = true
 lntrn-render.workspace = true
 lntrn-ui.workspace = true
 lntrn-app.workspace = true

@@ -146,11 +146,8 @@ fn a_lasting_potion_shows_under_the_health_bar_while_it_works() {
 fn the_editor_lists_the_cauldron() {
     let (mut h, mut shell, mut game) = playing("alch_editor");
     key(&mut h, &mut shell, &mut game, Key::F(2), Modifiers::NONE);
-    h.move_to(shell.screen.layout_of(shell.screen.target(View::Editor).unwrap()).unwrap().rect.center());
-    h.wheel(-40.0);
-    turn(&mut h, &mut shell, &mut game);
-    turn(&mut h, &mut shell, &mut game);
-    let row = panel_row(&h, &shell, "Cauldron");
+    panel_tab(&mut h, &mut shell, &mut game, 1);
+    let row = prop_row(&h, &shell, PropKind::Cauldron);
     click(&mut h, &mut shell, &mut game, row);
     assert_eq!((game.editor.tool, game.editor.prop), (Tool::Place, PropKind::Cauldron));
     let (x, y) = game.sim.player.tile;

@@ -14,6 +14,7 @@ lntrn-core = { path = "../lantern-ui-2/crates/lntrn-core" }
 lntrn-image = { path = "../lantern-ui-2/crates/lntrn-image" }
 lntrn-sys = { path = "../lantern-ui-2/crates/lntrn-sys" }
 lntrn-data = { path = "../lantern-ui-2/crates/lntrn-data" }
+lntrn-props = { path = "../lantern-ui-2/crates/lntrn-props" }
 lntrn-render = { path = "../lantern-ui-2/crates/lntrn-render" }
 lntrn-ui = { path = "../lantern-ui-2/crates/lntrn-ui" }
 lntrn-app = { path = "../lantern-ui-2/crates/lntrn-app" }

@@ -7,6 +7,7 @@
 pub const TICK_SECONDS: f64 = 0.4;
 
 pub mod abilities;
+pub mod bank;
 pub mod combat;
 pub mod edit;
 pub mod gear;
@@ -29,6 +30,7 @@ mod wire;
 pub mod world;
 
 pub use abilities::Ability;
+pub use bank::Bank;
 pub use gear::{Bonus, Gear, Metal, Slot};
 pub use items::{Inventory, Item, Stack};
 pub use making::{RECIPES, Recipe, Station};

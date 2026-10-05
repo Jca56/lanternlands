@@ -140,13 +140,10 @@ fn escape_steps_back_from_a_station_before_it_leaves_the_game() {
 fn the_editor_lists_the_new_props_and_places_them() {
     let (mut h, mut shell, mut game) = playing("smith_editor");
     key(&mut h, &mut shell, &mut game, Key::F(2), Modifiers::NONE);
-    h.move_to(shell.screen.layout_of(shell.screen.target(View::Editor).unwrap()).unwrap().rect.center());
-    h.wheel(-30.0);
-    turn(&mut h, &mut shell, &mut game);
-    turn(&mut h, &mut shell, &mut game);
+    panel_tab(&mut h, &mut shell, &mut game, 1);
     let (x, y) = game.sim.player.tile;
     for (label, kind, tile) in [("Tin rock", PropKind::TinRock, (x + 2, y)), ("Furnace", PropKind::Furnace, (x + 2, y + 2)), ("Anvil", PropKind::Anvil, (x - 2, y + 2))] {
-        let row = panel_row(&h, &shell, label);
+        let row = prop_row(&h, &shell, kind);
         click(&mut h, &mut shell, &mut game, row);
         assert_eq!((game.editor.tool, game.editor.prop), (Tool::Place, kind));
         let at = screen_of(&game, tile);

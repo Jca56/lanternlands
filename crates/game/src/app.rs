@@ -9,7 +9,7 @@ use lntrn_core::{log_error, log_info};
 use lntrn_math::{Rect, Vec2};
 use lntrn_render::{Gpu, Images, TexDesc, wgpu};
 use lntrn_ui::keymap::CTX_WINDOW;
-use lntrn_ui::{Action, AreaCx, Axis, Dialog, Host, HostCx, Key, KeyConfig, KeyItem, KeyPress, Modifiers, Shell, ShellRequest, Trigger, Ui};
+use lntrn_ui::{Action, AreaCx, Axis, ContextMenu, Dialog, Host, HostCx, Key, KeyConfig, KeyItem, KeyPress, Modifiers, Shell, ShellRequest, Trigger, Ui};
 use lntrn_image::Image;
 use lntrn_ui::ImageHandle;
 use sim::{Ability, Character, Item, MonsterKind, PersonKind, PropKind, Sim, TICK_SECONDS, World};
@@ -133,6 +133,14 @@ pub struct Game {
     ability_pictures: AbilityPictures,
     editor: MapEditor,
     pictures: Pictures,
+    /// The right-click menu a press this frame asked for.
+    menu_wanted: Option<ContextMenu>,
+    /// What is waiting for the dialog that asks how many, and the number
+    /// typed so far; and the last number that was.
+    moving: Option<(menu::Move, String)>,
+    last_amount: Option<u32>,
+    /// The player was at the bank last frame.
+    was_banking: bool,
     /// The editor's panel is on screen.
     editing: bool,
     /// Open or close the panel after this rebuild.
@@ -247,6 +255,10 @@ impl Game {
             ability_pictures: AbilityPictures::default(),
             editor: MapEditor::new(),
             pictures: Pictures::default(),
+            menu_wanted: None,
+            moving: None,
+            last_amount: None,
+            was_banking: false,
             editing: false,
             panel_wanted: None,
         };
@@ -359,6 +371,9 @@ impl Host for Game {
 
     fn run(&mut self, action: &Action, cx: &mut HostCx) {
         let playing = self.mode != Mode::Title;
+        if playing && !self.editing && self.run_menu(action, cx) {
+            return cx.rebuild();
+        }
         match action.id.as_str() {
             FULLSCREEN => {
                 self.fullscreen = !self.fullscreen;
@@ -373,6 +388,7 @@ impl Host for Game {
             // Esc closes what is open before it leaves the game.
             TITLE if playing && !self.editing && self.sim.saying().is_some() => self.sim.end_talk(),
             TITLE if playing && !self.editing && self.sim.station().is_some() => self.sim.leave_station(),
+            TITLE if playing && !self.editing && self.sim.banking() => self.sim.leave_bank(),
             TITLE if playing && !self.editing => self.back_to_title(),
             CREATE => self.create_character(),
             DELETE => self.delete_character(cx),
@@ -407,11 +423,11 @@ impl Host for Game {
     }
 
     fn draw_item(&mut self, key: &str, ui: &mut Ui, cx: &mut HostCx) -> bool {
-        key == view_title::NAME_FIELD && self.draw_name_field(ui, cx)
+        (key == view_title::NAME_FIELD && self.draw_name_field(ui, cx)) || (key == menu::AMOUNT_FIELD && self.draw_amount_field(ui, cx))
     }
 
     fn dialog_ready(&self, action: &Action) -> bool {
-        action.id != CREATE || self.name_ready()
+        (action.id != CREATE || self.name_ready()) && (action.id != menu::AMOUNT || self.amount_ready())
     }
 
     fn close_requested(&mut self, _: bool, cx: &mut HostCx) -> bool {
@@ -423,65 +439,6 @@ impl Host for Game {
     }
 }
 
-impl AppHost for Game {
-    fn init_gpu(&mut self, gpu: &Gpu, format: wgpu::TextureFormat, images: &mut Images) {
-        self.renderer = Some(WorldRenderer::new(gpu, format, &self.sprites.sheet));
-        for (slot, kind) in self.pictures.props.iter_mut().zip(PropKind::ALL) {
-            *slot = self.look.prop(kind).map(|id| images.add(gpu, self.sprites.picture(id)));
-        }
-        for (slot, image) in self.item_pictures.0.iter_mut().zip(&self.item_images) {
-            *slot = image.as_ref().map(|image| images.add(gpu, image));
-        }
-        for (slot, image) in self.ability_pictures.0.iter_mut().zip(&self.ability_images) {
-            *slot = image.as_ref().map(|image| images.add(gpu, image));
-        }
-        for (slot, kind) in self.pictures.monsters.iter_mut().zip(MonsterKind::ALL) {
-            let standing = self.look.monster(kind).sprite(Facing::Down, Pose::Idle);
-            *slot = standing.map(|(id, _)| images.add(gpu, self.sprites.picture(id)));
-        }
-        for (slot, kind) in self.pictures.people.iter_mut().zip(PersonKind::ALL) {
-            let standing = self.look.person(kind).sprite(Facing::Down, Pose::Idle);
-            *slot = standing.map(|(id, _)| images.add(gpu, self.sprites.picture(id)));
-        }
-        self.title_picture = self.title_image.as_ref().map(|image| images.add(gpu, image));
-    }
-
-    fn after_rebuild(&mut self, _: &Gpu, _: &mut Images, shell: &mut Shell<Self>) -> bool {
-        self.sync_panel(shell)
-    }
-
-    fn exiting(&mut self, _: Exit) {
-        // However the game ended, the character in play is kept.
-        self.autosave();
-    }
-
-    fn render<'f>(&'f mut self, cx: &mut RenderCx<'f, '_>) {
-        if self.mode == Mode::Title {
-            // The painting covers the window; there is no world to draw.
-            return;
-        }
-        let extras = self.extras();
-        let Some(renderer) = self.renderer.as_mut().filter(|_| cx.window == 0) else { return };
-        // The world's area, in whole pixels inside the window.
-        let window = Rect::new(Vec2::ZERO, Vec2::new(cx.size[0] as f64, cx.size[1] as f64));
-        let view = self.view.round().intersection(&window);
-        if view.is_empty() {
-            return;
-        }
-        let rect = [view.min.x as u32, view.min.y as u32, view.width() as u32, view.height() as u32];
-        let sim = &self.sim;
-        self.scene.build(&sim.world, &self.camera, view.size(), self.scale, &self.sprites, &self.look, &extras, &|x, y| sim.is_spent((x, y)));
-        renderer.prepare(cx.gpu, &self.scene, [rect[2], rect[3]]);
-
-        // Nothing more changes this frame: the passes only read.
-        let renderer: &'f WorldRenderer = renderer;
-        let picture = cx.graph.transient(TexDesc::color("world", rect[2], rect[3], WorldRenderer::TARGET_FORMAT));
-        let backbuffer = cx.backbuffer;
-        cx.graph.add_node("world", &[], &[picture], move |_, encoder, views| renderer.draw(encoder, views.get(picture)));
-        cx.graph.add_node("world to window", &[picture], &[backbuffer], move |gpu, encoder, views| renderer.composite(gpu, encoder, views.get(picture), views.get(backbuffer), rect));
-    }
-}
-
 #[path = "app_view.rs"]
 mod view;
 
@@ -490,6 +447,12 @@ mod view_title;
 
 #[path = "app_people.rs"]
 mod view_people;
+
+#[path = "app_host.rs"]
+mod host;
+
+#[path = "app_menu.rs"]
+mod menu;
 
 #[cfg(test)]
 #[path = "app_tests.rs"]

@@ -18,7 +18,7 @@ pub const fn person_wear(kind: PersonKind) -> &'static [(Slot, [f32; 4])] {
     match kind {
         // An apron and gloves, against the sparks.
         PersonKind::Smith => &[(Slot::Body, LEATHER), (Slot::Hands, DARK_LEATHER)],
-        PersonKind::Herbalist => &[],
+        PersonKind::Herbalist | PersonKind::Banker => &[],
         // Bronze from head to foot, sword and shield in hand.
         PersonKind::Guard => &[(Slot::Legs, BRONZE), (Slot::Feet, BRONZE), (Slot::Body, BRONZE), (Slot::Hands, BRONZE), (Slot::Head, BRONZE), (Slot::Shield, BRONZE), (Slot::Weapon, BRONZE)],
     }

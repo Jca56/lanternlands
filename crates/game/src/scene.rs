@@ -74,16 +74,12 @@ pub struct Placed {
 /// Which sprite each thing in the world is drawn with.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Look {
-    tree: Option<SpriteId>,
-    rock: Option<SpriteId>,
-    tin_rock: Option<SpriteId>,
+    /// What each kind of prop is drawn with, in the order of
+    /// `PropKind::ALL`: the sprite called what the kind is.
+    props: [Option<SpriteId>; PropKind::ALL.len()],
+    /// A rock and a herb that have given all they had.
     rock_spent: Option<SpriteId>,
-    furnace: Option<SpriteId>,
-    anvil: Option<SpriteId>,
-    cauldron: Option<SpriteId>,
     herb_picked: Option<SpriteId>,
-    herb_purple: Option<SpriteId>,
-    herb_cyan: Option<SpriteId>,
     tuft: Option<SpriteId>,
     /// What marks where the player died.
     pub gravestone: Option<SpriteId>,
@@ -124,14 +120,27 @@ fn person_sheet(kind: PersonKind) -> String {
 
 impl Look {
     pub fn find(set: &SpriteSet) -> Look {
-        Look { tree: set.id("tree"), rock: set.id("rock"), tin_rock: set.id("tin_rock"), rock_spent: set.id("rock_spent"), furnace: set.id("furnace"), anvil: set.id("anvil"), cauldron: set.id("cauldron"), herb_picked: set.id("herb_picked"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft"), gravestone: set.id("gravestone"), target_ring: set.id("target_ring"), target_ring_wide: set.id("target_ring_wide"), player: WalkSprites::find(set, "player"), goblin: WalkSprites::find(set, "goblin"), people: PersonKind::ALL.map(|kind| WalkSprites::find(set, &person_sheet(kind))), gear: Slot::ALL.map(|slot| GearSprites { over: WalkSprites::find(set, &format!("gear_{}", slot.name())), under: WalkSprites::find(set, &format!("gear_{}_under", slot.name())) }) }
+        Look {
+            props: PropKind::ALL.map(|kind| set.id(kind.name())),
+            rock_spent: set.id("rock_spent"),
+            herb_picked: set.id("herb_picked"),
+            tuft: set.id("tuft"),
+            gravestone: set.id("gravestone"),
+            target_ring: set.id("target_ring"),
+            target_ring_wide: set.id("target_ring_wide"),
+            player: WalkSprites::find(set, "player"),
+            goblin: WalkSprites::find(set, "goblin"),
+            people: PersonKind::ALL.map(|kind| WalkSprites::find(set, &person_sheet(kind))),
+            gear: Slot::ALL.map(|slot| GearSprites { over: WalkSprites::find(set, &format!("gear_{}", slot.name())), under: WalkSprites::find(set, &format!("gear_{}_under", slot.name())) }),
+        }
     }
 
     /// The names of the sprites it looked for and did not find.
     pub fn missing(&self) -> Vec<String> {
-        let all = [("tree", self.tree), ("rock", self.rock), ("tin_rock", self.tin_rock), ("rock_spent", self.rock_spent), ("furnace", self.furnace), ("anvil", self.anvil), ("cauldron", self.cauldron), ("herb_picked", self.herb_picked), ("herb_purple", self.herb_purple), ("herb_cyan", self.herb_cyan), ("tuft", self.tuft), ("gravestone", self.gravestone), ("target_ring", self.target_ring), ("target_ring_wide", self.target_ring_wide)];
+        let props = PropKind::ALL.into_iter().zip(self.props).map(|(kind, id)| (kind.name(), id));
+        let all = props.chain([("rock_spent", self.rock_spent), ("herb_picked", self.herb_picked), ("tuft", self.tuft), ("gravestone", self.gravestone), ("target_ring", self.target_ring), ("target_ring_wide", self.target_ring_wide)]);
         let people = PersonKind::ALL.into_iter().zip(&self.people).flat_map(|(kind, sprites)| sprites.missing(&person_sheet(kind)));
-        all.into_iter().filter(|(_, id)| id.is_none()).map(|(name, _)| name.to_owned()).chain(self.player.missing("player")).chain(self.goblin.missing("goblin")).chain(people).collect()
+        all.filter(|(_, id)| id.is_none()).map(|(name, _)| name.to_owned()).chain(self.player.missing("player")).chain(self.goblin.missing("goblin")).chain(people).collect()
     }
 
     /// The sprite a prop is drawn with once it has given all it had.
@@ -169,16 +178,7 @@ impl Look {
 
     /// The sprite a kind of prop is drawn with, if the assets have it.
     pub fn prop(&self, kind: PropKind) -> Option<SpriteId> {
-        match kind {
-            PropKind::Tree => self.tree,
-            PropKind::Rock => self.rock,
-            PropKind::HerbPurple => self.herb_purple,
-            PropKind::HerbCyan => self.herb_cyan,
-            PropKind::TinRock => self.tin_rock,
-            PropKind::Furnace => self.furnace,
-            PropKind::Anvil => self.anvil,
-            PropKind::Cauldron => self.cauldron,
-        }
+        self.props[PropKind::ALL.iter().position(|k| *k == kind).expect("every kind is listed")]
     }
 }
 
@@ -341,9 +341,10 @@ mod tests {
     #[test]
     fn every_sprite_the_scene_asks_for_is_in_the_assets() {
         assert_eq!(Look::find(&set()).missing(), Vec::<String>::new());
-        // With no assets: the fourteen of the map, and eighteen each
-        // for the player, the goblin and every person.
-        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 50 + 18 * PersonKind::ALL.len());
+        // With no assets: one for every kind of prop and six more of the
+        // map's, and eighteen each for the player, the goblin and every
+        // person.
+        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), PropKind::ALL.len() + 6 + 18 * (2 + PersonKind::ALL.len()));
     }
 
     #[test]
@@ -388,7 +389,7 @@ mod tests {
         let mut scene = Scene::default();
         let look = Look::find(&set);
         scene.build(&world, &Camera::new(center), Vec2::new(400.0, 400.0), 1.0, &set, &look, &[], &|_, _| false);
-        let sprite = set.get(look.tree.unwrap());
+        let sprite = set.get(look.prop(PropKind::Tree).unwrap());
         let want = (center - sprite.anchor - Vec2::new(tree.x as f64, tree.y as f64)).to_gpu();
         assert!(scene.sprites.iter().any(|s| s.pos == want && s.uv == sprite.uv), "the tree is not where its anchor puts it");
     }
@@ -428,7 +429,7 @@ mod tests {
             scene.build(&world, &Camera::new(center), Vec2::new(600.0, 600.0), 1.0, &set, &look, &[], spent);
             scene.sprites
         };
-        let (whole, bare) = (set.get(look.rock.unwrap()).uv, set.get(look.rock_spent.unwrap()).uv);
+        let (whole, bare) = (set.get(look.prop(PropKind::Rock).unwrap()).uv, set.get(look.rock_spent.unwrap()).uv);
         let before = drawn(&|_, _| false);
         let after = drawn(&|x, y| (x, y) == (rock.x, rock.y));
         assert!(before.iter().all(|s| s.uv != bare));
@@ -436,7 +437,7 @@ mod tests {
         assert_eq!(after.iter().filter(|s| s.uv == whole).count() + 1, before.iter().filter(|s| s.uv == whole).count());
         assert_eq!(after.len(), before.len());
         // Asked of a tree, it changes nothing: a tree is no node.
-        assert_eq!(drawn(&|_, _| true).iter().filter(|s| s.uv == set.get(look.tree.unwrap()).uv).count(), before.iter().filter(|s| s.uv == set.get(look.tree.unwrap()).uv).count());
+        assert_eq!(drawn(&|_, _| true).iter().filter(|s| s.uv == set.get(look.prop(PropKind::Tree).unwrap()).uv).count(), before.iter().filter(|s| s.uv == set.get(look.prop(PropKind::Tree).unwrap()).uv).count());
     }
 
     #[test]

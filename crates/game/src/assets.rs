@@ -373,8 +373,12 @@ anchor = [4.5, 6]
         for file in files {
             let image = lntrn_image::decode(&std::fs::read(dir.join(file)).expect("the picture is there")).expect("it decodes");
             let rects: Vec<(&str, [u32; 4])> = manifest.sprites.iter().filter(|s| s.file == file).map(|s| (s.name.as_str(), s.rect.unwrap_or([0, 0, image.width, image.height]))).collect();
+            // What is made to join up with its neighbours to either side
+            // runs off its left and right edges on purpose.
+            const JOINS: [&str; 1] = ["fence"];
             for &(name, [x, y, w, h]) in &rects {
-                let border = (x..x + w).flat_map(|px| [(px, y), (px, y + h - 1)]).chain((y..y + h).flat_map(|py| [(x, py), (x + w - 1, py)]));
+                let sides = (y..y + h).flat_map(|py| [(x, py), (x + w - 1, py)]).filter(|_| !JOINS.contains(&name));
+                let border = (x..x + w).flat_map(|px| [(px, y), (px, y + h - 1)]).chain(sides);
                 for (px, py) in border {
                     assert_eq!(image.pixel(px, py)[3], 0, "{name}: something is drawn on its rect's edge at ({px}, {py}) of {file}");
                 }

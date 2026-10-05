@@ -172,9 +172,8 @@ fn the_start_tool_sets_the_start_and_shows_a_ghost_there_only_while_editing() {
     let (mut h, mut shell, mut game) = playing("start_tool");
     assert_eq!(game.extras().len(), 1, "playing, only the player is extra");
     key(&mut h, &mut shell, &mut game, Key::F(2), Modifiers::NONE);
-    let row = panel_row(&h, &shell, "Start");
-    click(&mut h, &mut shell, &mut game, row);
-    assert_eq!(game.editor.tool, Tool::Start);
+    panel_tab(&mut h, &mut shell, &mut game, 2);
+    panel_tool(&mut h, &mut shell, &mut game, Tool::Start);
 
     let (x, y) = game.sim.player.tile;
     let tile = (x + 2, y + 2);

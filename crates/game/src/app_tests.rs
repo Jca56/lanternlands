@@ -59,11 +59,36 @@ fn click(h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game, at: Vec2) ->
     turn(h, shell, game)
 }
 
-/// Where a row of the editor's panel is on screen.
-fn panel_row(h: &Harness, shell: &Shell<Game>, label: &str) -> Vec2 {
+/// A widget of the editor's panel, by the names it is under.
+fn panel_id(shell: &Shell<Game>, path: &[&str]) -> WidgetId {
     let area = shell.screen.target(View::Editor).expect("the panel is open");
-    let id = WidgetId::ROOT.with_u64(area as u64).with("body").with("map editor").with(label);
-    h.rect_of(id).unwrap_or_else(|| panic!("no row called {label} on the panel")).center()
+    path.iter().fold(WidgetId::ROOT.with_u64(area as u64).with("body").with("map editor"), |id, name| id.with(name))
+}
+
+/// Where a row of the editor's panel is on screen: `path` is the group
+/// it is listed under, if it is under one, and then its own name.
+fn panel_row(h: &Harness, shell: &Shell<Game>, path: &[&str]) -> Vec2 {
+    h.rect_of(panel_id(shell, path)).unwrap_or_else(|| panic!("nothing at {path:?} on the panel")).center()
+}
+
+/// Where a prop's row is, on the Props tab.
+fn prop_row(h: &Harness, shell: &Shell<Game>, kind: PropKind) -> Vec2 {
+    panel_row(h, shell, &[panel::Group::of(kind).label(), panel::prop_label(kind)])
+}
+
+/// Turn the editor's panel to one of its tabs.
+fn panel_tab(h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game, tab: usize) {
+    let at = h.rect_of(panel_id(shell, &[panel::TABS[tab]]).with_index(tab)).expect("a tab").center();
+    click(h, shell, game, at);
+    assert_eq!(game.editor.tab, tab);
+}
+
+/// Press the button for a tool on the tab the panel is turned to.
+fn panel_tool(h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game, tool: Tool) {
+    let place = panel::TAB_TOOLS[game.editor.tab].iter().position(|t| *t == tool).expect("the tab has a button for it");
+    let at = h.rect_of(panel_id(shell, &[tool.label()]).with_index(place)).expect("a tool's button").center();
+    click(h, shell, game, at);
+    assert_eq!(game.editor.tool, tool);
 }
 
 /// Where the open dialog's button number `index` (from the left),
@@ -177,13 +202,11 @@ fn a_drag_paints_a_line_as_one_step() {
 fn the_panels_rows_pick_what_the_next_click_does() {
     let (mut h, mut shell, mut game) = started("rows");
     key(&mut h, &mut shell, &mut game, Key::F(2), Modifiers::NONE);
-    // The props are below the fold in a window this short: scroll to them.
-    h.move_to(Vec2::new(200.0, 500.0));
-    h.wheel(-8.0);
-    turn(&mut h, &mut shell, &mut game);
-    turn(&mut h, &mut shell, &mut game);
-    let row = panel_row(&h, &shell, "Copper rock");
-    assert!(row.y < WINDOW.y, "the Rock row scrolled into view: {row:?}");
+    // The props are on a tab of their own, listed in groups.
+    panel_tab(&mut h, &mut shell, &mut game, 1);
+    assert_eq!(game.editor.tool, Tool::Place, "turning to the tab takes up its tool");
+    let row = prop_row(&h, &shell, PropKind::Rock);
+    assert!(row.y < WINDOW.y, "the Rock row is in view: {row:?}");
     click(&mut h, &mut shell, &mut game, row);
     assert_eq!((game.editor.tool, game.editor.prop), (Tool::Place, PropKind::Rock));
 
@@ -199,9 +222,8 @@ fn the_panels_rows_pick_what_the_next_click_does() {
 fn the_move_tool_drags_a_prop_to_another_tile_and_one_undo_puts_it_back() {
     let (mut h, mut shell, mut game) = started("move");
     key(&mut h, &mut shell, &mut game, Key::F(2), Modifiers::NONE);
-    let row = panel_row(&h, &shell, "Move");
-    click(&mut h, &mut shell, &mut game, row);
-    assert_eq!(game.editor.tool, Tool::Move);
+    panel_tab(&mut h, &mut shell, &mut game, 1);
+    panel_tool(&mut h, &mut shell, &mut game, Tool::Move);
 
     // Two bare grass tiles well inside the view: a tree is stood on the
     // first, to be carried to the second.
@@ -346,3 +368,6 @@ mod people;
 
 #[path = "app_ring_tests.rs"]
 mod rings;
+
+#[path = "app_bank_tests.rs"]
+mod bank;

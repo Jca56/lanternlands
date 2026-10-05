@@ -15,8 +15,9 @@ pub const CHUNK: i32 = 32;
 pub(crate) const AREA: usize = (CHUNK * CHUNK) as usize;
 pub(crate) const VOID: u8 = u8::MAX;
 
-/// What a prop is. Placeholders for now: objects get their real
-/// definitions from data when they start to do things.
+/// What a prop is: something that stands on one tile. Some are worked
+/// (rocks, herbs), some are used (stations, the bank chest), and the
+/// rest are scenery.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PropKind {
     Tree,
@@ -27,10 +28,31 @@ pub enum PropKind {
     Furnace,
     Anvil,
     Cauldron,
+    BankChest,
+    Crates,
+    Barrel,
+    Signpost,
+    Well,
+    Fence,
 }
 
 impl PropKind {
-    pub const ALL: [PropKind; 8] = [PropKind::Tree, PropKind::Rock, PropKind::TinRock, PropKind::HerbPurple, PropKind::HerbCyan, PropKind::Furnace, PropKind::Anvil, PropKind::Cauldron];
+    pub const ALL: [PropKind; 14] = [
+        PropKind::Tree,
+        PropKind::Rock,
+        PropKind::TinRock,
+        PropKind::HerbPurple,
+        PropKind::HerbCyan,
+        PropKind::Furnace,
+        PropKind::Anvil,
+        PropKind::Cauldron,
+        PropKind::BankChest,
+        PropKind::Crates,
+        PropKind::Barrel,
+        PropKind::Signpost,
+        PropKind::Well,
+        PropKind::Fence,
+    ];
 
     /// What it is called in a map file. Never change one: saved maps
     /// hold these.
@@ -44,6 +66,12 @@ impl PropKind {
             PropKind::Furnace => "furnace",
             PropKind::Anvil => "anvil",
             PropKind::Cauldron => "cauldron",
+            PropKind::BankChest => "bank_chest",
+            PropKind::Crates => "crates",
+            PropKind::Barrel => "barrel",
+            PropKind::Signpost => "signpost",
+            PropKind::Well => "well",
+            PropKind::Fence => "fence",
         }
     }
 

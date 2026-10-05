@@ -1,13 +1,13 @@
 //! The panel of what the player wears: seven slots laid out like a
 //! body, and what it all adds up to. A press on something worn takes
-//! it off.
+//! it off; a right press asks for its menu.
 
 use lntrn_math::{Color, Rect, Vec2};
 use lntrn_ui::{Sense, Ui};
 use sim::{Sim, Slot};
 
 use crate::hotbar::PLATE;
-use crate::hud::ItemPictures;
+use crate::hud::{ItemPictures, Press};
 
 /// Sizes in logical pixels.
 const SLOT: f64 = 90.0;
@@ -28,9 +28,9 @@ pub fn size(ui: &Ui) -> Vec2 {
     Vec2::new(slot * 3.0 + gap * 2.0 + pad * 2.0, slot * 4.0 + gap * 3.0 + pad * 3.0 + line * LINES as f64)
 }
 
-/// Draw the panel in `rect`. Gives the slot whose gear was pressed, to
-/// be taken off.
-pub fn draw(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures) -> Option<Slot> {
+/// Draw the panel in `rect`. Gives what a press on something worn
+/// asked for.
+pub fn draw(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures) -> Option<Press> {
     let (slot, gap, pad) = (ui.m.px(SLOT), ui.m.px(GAP), ui.m.px(PAD));
     let style = ui.text_style();
     let mut off = None;
@@ -52,7 +52,9 @@ pub fn draw(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures) -> Opti
         let edge = if r.hovered { (ui.m.border * 2.0, ui.theme.accent) } else { (ui.m.border.max(2.0), ui.theme.border_dark) };
         ui.draw.stroke_rect(cell, edge.0, ui.m.radius, edge.1);
         if r.clicked {
-            off = Some(place);
+            off = Some(Press::Worn(place));
+        } else if r.hovered && ui.state.right_pressed {
+            off = Some(Press::WornMenu(place));
         }
     }
     // What it all adds up to.

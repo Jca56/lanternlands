@@ -3,18 +3,14 @@
 //! just happened.
 
 use lntrn_math::{Color, Rect, Vec2};
-use lntrn_ui::{ImageHandle, Sense, Ui};
-use sim::items::SLOTS;
+use lntrn_ui::{ImageHandle, Ui};
 use sim::{Event, Item, Sim, Skill, Slot, Who};
 
-use crate::{gear_panel, hotbar, tonics};
+use crate::{bag_panel, gear_panel, hotbar, tonics};
 
 /// Sizes in logical pixels.
-const SLOT: f64 = 75.0;
 const GAP: f64 = 5.0;
 const PAD: f64 = 10.0;
-/// The bag is taller than wide: five across, six down.
-const COLUMNS: usize = 5;
 const SKILLS_WIDTH: f64 = 380.0;
 const BUTTON: Vec2 = Vec2::new(130.0, 55.0);
 /// How far the buttons and panels keep from the window's edge.
@@ -94,13 +90,17 @@ impl ItemPictures {
     }
 }
 
-/// What a press on the bag or the gear asks for: what is in a slot of
-/// the bag used (gear put on, a potion drunk), or what is worn in a
-/// slot taken off.
+/// What a press on the bag or the gear asks for. A plain press does the
+/// obvious thing with what is in a slot of the bag (gear put on, a
+/// potion drunk, anything put in the bank while that is open) or takes
+/// off what is worn in a slot; a right press asks for the menu of
+/// everything that can be done with it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Press {
     Bag(usize),
     Worn(Slot),
+    BagMenu(usize),
+    WornMenu(Slot),
 }
 
 #[derive(Default)]
@@ -144,6 +144,10 @@ impl Hud {
                 }
                 Event::InventoryFull => {
                     self.say("Your bag is full", now);
+                    continue;
+                }
+                Event::BankFull => {
+                    self.say("The bank is full", now);
                     continue;
                 }
                 Event::TooHard { skill, level } => {
@@ -245,10 +249,9 @@ impl Hud {
             move |size: Vec2| Rect::new(Vec2::new(right - size.x, floor - size.y), Vec2::new(right, floor))
         };
         if self.bag_open {
-            let rows = SLOTS.div_ceil(COLUMNS) as f64;
-            let size = Vec2::new(px(SLOT) * COLUMNS as f64 + gap * (COLUMNS as f64 - 1.0) + px(PAD) * 2.0, px(SLOT) * rows + gap * rows + m.widget_h + px(PAD) * 2.0);
+            let size = bag_panel::size(ui);
             let rect = stand(right, size.x)(size);
-            ui.child(rect, LAYER, |ui| wear = draw_bag(ui, rect, sim, pictures, sight.into).map(Press::Bag));
+            ui.child(rect, LAYER, |ui| wear = bag_panel::draw(ui, rect, sim, pictures, sight.into));
             right = rect.min.x - gap;
         }
         if self.skills_open {
@@ -270,7 +273,7 @@ impl Hud {
             let rect = stand(right, size.x)(size);
             ui.child(rect, LAYER, |ui| {
                 backdrop(ui, rect);
-                wear = gear_panel::draw(ui, rect, sim, pictures).map(Press::Worn).or(wear);
+                wear = gear_panel::draw(ui, rect, sim, pictures).or(wear);
             });
         }
         wear
@@ -359,60 +362,9 @@ pub fn player_bar_shows(sim: &Sim) -> bool {
 }
 
 /// A panel's own ground: the theme's panel, with a dark edge.
-fn backdrop(ui: &mut Ui, rect: Rect) {
+pub fn backdrop(ui: &mut Ui, rect: Rect) {
     ui.draw.rounded_rect_gradient(rect, ui.m.radius, ui.theme.panel.top, ui.theme.panel.bottom);
     ui.draw.stroke_rect(rect, ui.m.border, ui.m.radius, ui.theme.border_dark);
-}
-
-/// The bag: every slot with what it holds and how many, and under them
-/// the name of what the pointer is on.
-/// The bag. Gives the slot of something that was pressed and can be
-/// used: gear to put on, a potion to drink.
-fn draw_bag(ui: &mut Ui, rect: Rect, sim: &Sim, pictures: &ItemPictures, into: f64) -> Option<usize> {
-    backdrop(ui, rect);
-    let mut put_on = None;
-    let (slot, gap, pad) = (ui.m.px(SLOT), ui.m.px(GAP), ui.m.px(PAD));
-    let style = ui.text_style();
-    let mut pointed = None;
-    for (i, held) in sim.inventory.slots().iter().enumerate() {
-        let (column, row) = ((i % COLUMNS) as f64, (i / COLUMNS) as f64);
-        let at = rect.min + Vec2::new(pad + column * (slot + gap), pad + row * (slot + gap));
-        let cell = Rect::from_min_size(at, Vec2::new(slot, slot));
-        let usable = held.is_some_and(|stack| stack.item.slot().is_some() || stack.item.potion().is_some());
-        let r = ui.interact(ui.id("slot").with_index(i), cell, if usable { Sense::CLICK } else { Sense::NONE });
-        ui.recessed(cell, ui.theme.field);
-        let Some(stack) = held else { continue };
-        if r.clicked {
-            put_on = Some(i);
-        }
-        if r.hovered {
-            pointed = Some(*stack);
-            ui.draw.stroke_rect(cell, ui.m.border * 2.0, ui.m.radius, ui.theme.accent);
-        }
-        if let Some(image) = pictures.of(stack.item) {
-            let room = slot - pad * 0.5;
-            let scale = (room / image.width.max(1) as f64).min(room / image.height.max(1) as f64);
-            let fitted = Rect::from_center_size(cell.center(), Vec2::new(image.width as f64, image.height as f64) * scale).round();
-            ui.draw.image(fitted, image, 0.0, Color::WHITE);
-        }
-        tonics::draw_wait(ui, cell, sim, stack.item, into);
-        if stack.item.stacks() {
-            // The count in the corner, with a dark copy under it so it
-            // reads over any picture.
-            let line = style.line_height() as f64;
-            let corner = Rect::new(Vec2::new(cell.min.x, cell.max.y - line), cell.max - Vec2::new(pad * 0.5, 0.0));
-            let count = stack.count.to_string();
-            ui.text_right(&count, &style, corner.translate(Vec2::new(0.0, ui.m.px(2.0))), Color::rgba(0.0, 0.0, 0.0, 0.85));
-            ui.text_right(&count, &style, corner, ui.theme.text);
-        }
-    }
-    if let Some(stack) = pointed {
-        let rows = SLOTS.div_ceil(COLUMNS) as f64;
-        let top = rect.min.y + pad + rows * (slot + gap);
-        let line = Rect::new(Vec2::new(rect.min.x + pad, top), Vec2::new(rect.max.x - pad, top + ui.m.widget_h));
-        ui.text_in_rect(stack.item.label(), &style, line, ui.theme.text);
-    }
-    put_on
 }
 
 #[cfg(test)]

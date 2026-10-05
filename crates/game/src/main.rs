@@ -5,6 +5,8 @@ mod anim;
 mod app;
 mod assets;
 mod atlas;
+mod bag_panel;
+mod bank_panel;
 mod camera;
 mod editor;
 mod gear_panel;

@@ -21,10 +21,11 @@ pub enum PersonKind {
     Smith,
     Herbalist,
     Guard,
+    Banker,
 }
 
 impl PersonKind {
-    pub const ALL: [PersonKind; 3] = [PersonKind::Smith, PersonKind::Herbalist, PersonKind::Guard];
+    pub const ALL: [PersonKind; 4] = [PersonKind::Smith, PersonKind::Herbalist, PersonKind::Guard, PersonKind::Banker];
 
     /// What they are called in a map file. Never change one.
     pub const fn name(self) -> &'static str {
@@ -32,6 +33,7 @@ impl PersonKind {
             PersonKind::Smith => "smith",
             PersonKind::Herbalist => "herbalist",
             PersonKind::Guard => "guard",
+            PersonKind::Banker => "banker",
         }
     }
 
@@ -45,6 +47,7 @@ impl PersonKind {
             PersonKind::Smith => "Bram",
             PersonKind::Herbalist => "Maren",
             PersonKind::Guard => "Odo",
+            PersonKind::Banker => "Tilda",
         }
     }
 
@@ -54,6 +57,7 @@ impl PersonKind {
             PersonKind::Smith => "Smith",
             PersonKind::Herbalist => "Herbalist",
             PersonKind::Guard => "Guard",
+            PersonKind::Banker => "Banker",
         }
     }
 
@@ -76,6 +80,11 @@ impl PersonKind {
                 "Nothing ever happens here. I'm not complaining. Well, I am a bit.",
                 "Bram made this helmet. It's a fine helmet. It is also a size too small, and he knows it.",
             ],
+            PersonKind::Banker => &[
+                "I count everything twice. Then once more, in case the first two were in on it together.",
+                "Bram keeps asking what's in the chest. I keep telling him it's mostly other people's rocks.",
+                "Odo guards the whole village. I guard one box. Ask yourself which of us sleeps better.",
+            ],
         }
     }
 
@@ -83,7 +92,7 @@ impl PersonKind {
     /// for those who stay where they are put.
     pub const fn roam(self) -> i32 {
         match self {
-            PersonKind::Smith | PersonKind::Herbalist => 0,
+            PersonKind::Smith | PersonKind::Herbalist | PersonKind::Banker => 0,
             PersonKind::Guard => 2,
         }
     }

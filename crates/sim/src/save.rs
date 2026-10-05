@@ -17,12 +17,14 @@
 //! "GRAV"  x i32, y i32, then what it holds, written as a bag is
 //! "GEAR"  count u8, then for each thing worn: its slot's name and
 //!         its own (each length u8 + UTF-8)
+//! "BANK"  what the bank holds, written as a bag is
 //! ```
 //!
 //! Skills and items are written by name, so new ones can be added and
 //! the order changed without breaking a save. A section this build
 //! does not know is skipped; a name it does not know is an error.
 
+use crate::bank::{self, Bank};
 use crate::combat::Grave;
 use crate::gear::{Gear, Slot};
 use crate::items::{Inventory, Item, SLOTS, Stack};
@@ -40,6 +42,7 @@ const BAG: [u8; 4] = *b"BAG ";
 const NODES: [u8; 4] = *b"NODE";
 const GRAVE: [u8; 4] = *b"GRAV";
 const GEAR: [u8; 4] = *b"GEAR";
+const BANK: [u8; 4] = *b"BANK";
 const NEVER: u32 = u32::MAX;
 
 /// Who a save belongs to.
@@ -73,12 +76,13 @@ pub struct Saved {
     pub grave: Option<Grave>,
     /// What they wear and hold.
     pub gear: Gear,
+    /// What they own and do not carry.
+    pub bank: Bank,
 }
 
 /// A bag as bytes: slots u16, the names in use, then for each slot a
 /// name index u8 (255 = empty) and a count u32.
-fn write_bag(out: &mut Vec<u8>, bag: &Inventory) {
-    let slots = bag.slots();
+fn write_bag(out: &mut Vec<u8>, slots: &[Option<Stack>]) {
     let (names, indices) = name_table(slots.iter().map(|slot| slot.map(|s| s.item.name())));
     out.extend_from_slice(&(slots.len() as u16).to_le_bytes());
     write_names(out, &names);
@@ -88,21 +92,43 @@ fn write_bag(out: &mut Vec<u8>, bag: &Inventory) {
     }
 }
 
-fn read_bag(section: &mut Reader) -> Result<Inventory, String> {
+/// What a bag's bytes hold, slot by slot: no more slots than `most`,
+/// which is how many this build's `what` has.
+fn read_slots(section: &mut Reader, most: usize, what: &str) -> Result<Vec<Option<Stack>>, String> {
     let slots = section.u16()? as usize;
-    if slots > SLOTS {
-        return Err(format!("its bag has {slots} slots; this build's has {SLOTS}"));
+    if slots > most {
+        return Err(format!("its {what} has {slots} slots; this build's has {most}"));
     }
     let names = section.names("item", Item::from_name)?;
-    let mut bag = Inventory::default();
-    for slot in 0..slots {
+    let mut held = vec![None; slots];
+    for (slot, held) in held.iter_mut().enumerate() {
         let (index, count) = (section.u8()?, section.u32()?);
         if index != VOID {
             let item = *names.get(index as usize).ok_or(format!("slot {slot} holds item number {index} of {}", names.len()))?;
-            bag.set_slot(slot, Some(Stack { item, count }));
+            *held = Some(Stack { item, count });
         }
     }
+    Ok(held)
+}
+
+fn read_bag(section: &mut Reader) -> Result<Inventory, String> {
+    let mut bag = Inventory::default();
+    for (slot, stack) in read_slots(section, SLOTS, "bag")?.into_iter().enumerate() {
+        bag.set_slot(slot, stack);
+    }
     Ok(bag)
+}
+
+/// The bank, where a kind of thing has one slot and no more.
+fn read_bank(section: &mut Reader) -> Result<Bank, String> {
+    let mut bank = Bank::default();
+    for (slot, stack) in read_slots(section, bank::SLOTS, "bank")?.into_iter().enumerate() {
+        if let Some(stack) = stack.filter(|s| bank.count(s.item) > 0) {
+            return Err(format!("its bank holds {} in two slots", stack.item.label()));
+        }
+        bank.set_slot(slot, stack);
+    }
+    Ok(bank)
 }
 
 impl Saved {
@@ -124,7 +150,7 @@ impl Saved {
         }
 
         let mut bag = Vec::new();
-        write_bag(&mut bag, &self.inventory);
+        write_bag(&mut bag, self.inventory.slots());
 
         let mut nodes = Vec::new();
         nodes.extend_from_slice(&(self.nodes.len() as u32).to_le_bytes());
@@ -140,7 +166,7 @@ impl Saved {
             let mut held = Vec::new();
             held.extend_from_slice(&grave.tile.0.to_le_bytes());
             held.extend_from_slice(&grave.tile.1.to_le_bytes());
-            write_bag(&mut held, &grave.items);
+            write_bag(&mut held, grave.items.slots());
             sections.push((GRAVE, held));
         }
         if self.gear.iter().next().is_some() {
@@ -150,6 +176,11 @@ impl Saved {
                 write_text(&mut worn, item.name());
             }
             sections.push((GEAR, worn));
+        }
+        if !self.bank.is_empty() {
+            let mut banked = Vec::new();
+            write_bag(&mut banked, self.bank.slots());
+            sections.push((BANK, banked));
         }
         let mut out = Vec::new();
         out.extend_from_slice(&MAGIC);
@@ -168,7 +199,7 @@ impl Saved {
         if version != VERSION {
             return Err(format!("it is version {version}; this build reads version {VERSION}"));
         }
-        let mut saved = Saved { character: Character::default(), tile: (0, 0), steps: 0, ticks: 0, skills: Skills::default(), inventory: Inventory::default(), nodes: Vec::new(), grave: None, gear: Gear::default() };
+        let mut saved = Saved { character: Character::default(), tile: (0, 0), steps: 0, ticks: 0, skills: Skills::default(), inventory: Inventory::default(), nodes: Vec::new(), grave: None, gear: Gear::default(), bank: Bank::default() };
         let mut seen: Vec<[u8; 4]> = Vec::new();
         for _ in 0..file.u8()? {
             let tag = file.tag()?;
@@ -215,6 +246,10 @@ impl Saved {
                     }
                     section.done("the gear")?;
                 }
+                BANK => {
+                    saved.bank = read_bank(&mut section)?;
+                    section.done("the bank")?;
+                }
                 NODES => {
                     for _ in 0..section.u32()? {
                         let at = (section.i32()?, section.i32()?);
@@ -242,7 +277,7 @@ impl Sim {
         let mut nodes: Vec<SavedNode> = self.worked.iter().map(|(&at, w)| SavedNode { at, left: w.left, wait: w.back_at.map(|back| back.saturating_sub(self.ticks).min(NEVER as u64 - 1) as u32) }).collect();
         // Row by row, so the same game is always the same save.
         nodes.sort_by_key(|n| (n.at.1, n.at.0));
-        Saved { character: character.clone(), tile: self.player.tile, steps: self.player.steps, ticks: self.ticks, skills: self.skills.clone(), inventory: self.inventory.clone(), nodes, grave: self.grave.clone(), gear: self.gear.clone() }
+        Saved { character: character.clone(), tile: self.player.tile, steps: self.player.steps, ticks: self.ticks, skills: self.skills.clone(), inventory: self.inventory.clone(), nodes, grave: self.grave.clone(), gear: self.gear.clone(), bank: self.bank.clone() }
     }
 
     /// The game a save holds, in `world` as it is now. The map may have
@@ -257,6 +292,7 @@ impl Sim {
         sim.inventory = saved.inventory.clone();
         sim.grave = saved.grave.clone();
         sim.gear = saved.gear.clone();
+        sim.bank = saved.bank.clone();
         for node in &saved.nodes {
             let back_at = node.wait.map(|wait| saved.ticks + wait as u64);
             sim.worked.insert(node.at, Worked { left: node.left, back_at });

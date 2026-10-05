@@ -32,6 +32,7 @@ pub enum Tool {
 }
 
 impl Tool {
+    #[cfg(test)]
     pub const ALL: [Tool; 9] = [Tool::Brush, Tool::Eraser, Tool::Fill, Tool::Place, Tool::Remove, Tool::Move, Tool::Start, Tool::Spawn, Tool::Person];
 
     pub const fn label(self) -> &'static str {
@@ -55,6 +56,8 @@ impl Tool {
 }
 
 pub struct MapEditor {
+    /// Which of the panel's tabs is turned to.
+    pub tab: usize,
     pub tool: Tool,
     /// How many tiles across the brush and the eraser are.
     pub size: u32,
@@ -79,7 +82,7 @@ fn tile_under(at: Vec2) -> (i32, i32) {
 
 impl MapEditor {
     pub fn new() -> MapEditor {
-        MapEditor { tool: Tool::Brush, size: 1, terrain: Terrain::Grass, prop: PropKind::Tree, monster: MonsterKind::Goblin, person: PersonKind::Smith, history: History::new(), stroke: None, held: None }
+        MapEditor { tab: 0, tool: Tool::Brush, size: 1, terrain: Terrain::Grass, prop: PropKind::Tree, monster: MonsterKind::Goblin, person: PersonKind::Smith, history: History::new(), stroke: None, held: None }
     }
 
     /// The tiles the held tool would change with the pointer at `at`

@@ -115,6 +115,33 @@ anchor = [120, 186]
 file = "sprites/cauldron.png"
 anchor = [120, 206]
 
+# Where what the player owns and does not carry is kept.
+[sprites.bank_chest]
+file = "sprites/bank-chest.png"
+anchor = [120, 186]
+
+# Scenery for a village. A fence piece is exactly a tile wide, with its
+# rails running off both edges, so pieces side by side join up.
+[sprites.crates]
+file = "sprites/crates.png"
+anchor = [125, 208]
+
+[sprites.barrel]
+file = "sprites/barrel.png"
+anchor = [100, 200]
+
+[sprites.signpost]
+file = "sprites/signpost.png"
+anchor = [120, 268]
+
+[sprites.well]
+file = "sprites/well.png"
+anchor = [130, 268]
+
+[sprites.fence]
+file = "sprites/fence.png"
+anchor = [100, 144]
+
 # A herb that has been picked, until it grows back.
 [sprites.herb_picked]
 file = "sprites/herb-picked.png"
@@ -179,6 +206,13 @@ columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
 
 [grids.person_herbalist]
 file = "sprites/person-herbalist.png"
+cell = [240, 320]
+anchor = [120, 286]
+rows = ["down", "up", "side"]
+columns = ["idle", "step_a", "pass", "step_b", "work_a", "work_b"]
+
+[grids.person_banker]
+file = "sprites/person-banker.png"
 cell = [240, 320]
 anchor = [120, 286]
 rows = ["down", "up", "side"]

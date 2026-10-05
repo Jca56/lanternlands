@@ -113,12 +113,9 @@ fn the_editor_lists_monsters_and_shows_a_ghost_where_one_lives() {
     let (x, y) = game.sim.player.tile;
     assert!(game.sim.world.set_spawn(x + 2, y, Some(sim::MonsterKind::Goblin)));
     key(&mut h, &mut shell, &mut game, Key::F(2), Modifiers::NONE);
-    h.move_to(shell.screen.layout_of(shell.screen.target(View::Editor).unwrap()).unwrap().rect.center());
-    h.wheel(-30.0);
-    turn(&mut h, &mut shell, &mut game);
-    turn(&mut h, &mut shell, &mut game);
+    panel_tab(&mut h, &mut shell, &mut game, 2);
     let Some(image) = snap("frame-editor-monsters", &mut h, &mut shell, &mut game) else { return };
-    let row = h.rect_of(body(&shell, View::Editor).with("map editor").with("Goblin")).expect("a Goblin row");
+    let row = h.rect_of(body(&shell, View::Editor).with("map editor").with(panel::MONSTERS).with("Goblin")).expect("a Goblin row");
     assert!(count(&image, row, GOBLIN_SKIN, 12) > 40, "its picture is in the row: {}", count(&image, row, GOBLIN_SKIN, 12));
     // The ghost: goblin-coloured, but thinned by the grass behind it.
     let ghost = around(&game, Vec2::new((x + 2) as f64 + 0.5, y as f64 + 0.5), 1.4);

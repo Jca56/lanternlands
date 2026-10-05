@@ -3,6 +3,7 @@
 //! after it has given what it holds it is spent, and comes back later.
 
 use crate::items::Item;
+use crate::player::{Activity, Event, Sim, Worked};
 use crate::skills::Skill;
 use crate::world::PropKind;
 
@@ -52,7 +53,77 @@ impl PropKind {
             // Herbs: a quick pick that never fails, two to a plant.
             PropKind::HerbPurple => Some(Node { skill: Skill::Herbalism, level: 1, item: Item::PurpleHerb, xp: 10, yields: 2, swing_ticks: 2, chance: 1.0, chance_per_level: 0.0, respawn_ticks: 75 }),
             PropKind::HerbCyan => Some(Node { skill: Skill::Herbalism, level: 3, item: Item::CyanHerb, xp: 14, yields: 2, swing_ticks: 2, chance: 1.0, chance_per_level: 0.0, respawn_ticks: 75 }),
-            PropKind::Tree | PropKind::Furnace | PropKind::Anvil | PropKind::Cauldron => None,
+            PropKind::Tree | PropKind::Furnace | PropKind::Anvil | PropKind::Cauldron | PropKind::BankChest => None,
+            PropKind::Crates | PropKind::Barrel | PropKind::Signpost | PropKind::Well | PropKind::Fence => None,
+        }
+    }
+}
+
+impl Sim {
+    /// The node on a tile, if what stands there is one.
+    pub fn node_at(&self, tile: (i32, i32)) -> Option<Node> {
+        self.world.prop_at(tile.0, tile.1)?.kind.node()
+    }
+
+    /// How many more a node on a tile will give; `None` where there is
+    /// no node.
+    pub fn node_left(&self, tile: (i32, i32)) -> Option<u8> {
+        let node = self.node_at(tile)?;
+        Some(self.worked.get(&tile).map_or(node.yields, |w| w.left))
+    }
+
+    /// Whether the node on a tile has given all it had, for now.
+    pub fn is_spent(&self, tile: (i32, i32)) -> bool {
+        self.node_left(tile) == Some(0)
+    }
+
+    /// How many ticks a swing at a node takes the player: fewer with
+    /// the right tool in the bag, and never less than one.
+    pub fn swing_ticks(&self, node: &Node) -> u32 {
+        let quicker = match node.skill {
+            Skill::Mining => self.inventory.slots().iter().flatten().map(|stack| stack.item.mining_speed()).max().unwrap_or(0),
+            _ => 0,
+        };
+        node.swing_ticks.saturating_sub(quicker).max(1)
+    }
+
+    /// A tick of work: when a swing is done, roll for what it got.
+    pub(crate) fn work(&mut self) {
+        let Some(Activity::Working { at, swing }) = self.player.activity else {
+            return;
+        };
+        let Some(node) = self.node_at(at).filter(|_| !self.is_spent(at)) else {
+            // It went from under them: edited away, or spent.
+            self.player.activity = None;
+            return;
+        };
+        if swing + 1 < self.swing_ticks(&node) {
+            self.player.activity = Some(Activity::Working { at, swing: swing + 1 });
+            return;
+        }
+        self.player.activity = Some(Activity::Working { at, swing: 0 });
+        self.player.swung = true;
+        let hit = self.rng.chance(node.chance_at(self.skills.level(node.skill)));
+        self.events.push(Event::Swing { at, hit });
+        if !hit {
+            return;
+        }
+        if self.inventory.add(node.item, 1) > 0 {
+            self.events.push(Event::InventoryFull);
+            self.player.activity = None;
+            return;
+        }
+        self.events.push(Event::Got { item: node.item, count: 1 });
+        self.gain(node.skill, node.xp);
+        let worked = self.worked.entry(at).or_insert(Worked { left: node.yields, back_at: None });
+        worked.left -= 1;
+        if worked.left == 0 {
+            worked.back_at = Some(self.ticks + node.respawn_ticks);
+            self.events.push(Event::Spent { at });
+            self.player.activity = None;
+        } else if !self.inventory.has_room_for(node.item) {
+            self.events.push(Event::InventoryFull);
+            self.player.activity = None;
         }
     }
 }

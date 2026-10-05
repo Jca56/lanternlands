@@ -8,6 +8,7 @@ use sim::{Ability, Activity, Event, Marker, TICK_SECONDS};
 use super::{AUTOSAVE_EVERY, Game, Mode};
 use crate::anim::{Facing, Pose};
 use crate::assets::SpriteId;
+use crate::bank_panel::{self, Asked};
 use crate::editor::Tool;
 use crate::hotbar;
 use crate::hud::{Press, Sight};
@@ -152,6 +153,9 @@ impl Game {
         } else {
             self.editor.release();
             self.play(ui, &hand, dt);
+            if let Some(menu) = self.menu_wanted.take() {
+                cx.request(ShellRequest::ContextMenu(Box::new(menu)));
+            }
         }
     }
 
@@ -164,7 +168,7 @@ impl Game {
         let under = (at.x.floor() as i32, at.y.floor() as i32);
         let aimed = if hand.hovered { self.monster_under(ui.state.pointer) } else { None };
         let hailed = if hand.hovered && aimed.is_none() { self.person_under(ui.state.pointer) } else { None };
-        let usable = self.sim.node_left(under).is_some_and(|left| left > 0) || self.sim.station_at(under).is_some() || self.sim.grave.as_ref().is_some_and(|g| g.tile == under);
+        let usable = self.sim.node_left(under).is_some_and(|left| left > 0) || self.sim.station_at(under).is_some() || self.sim.bank_at(under) || self.sim.grave.as_ref().is_some_and(|g| g.tile == under);
         if hand.hovered && (aimed.is_some() || hailed.is_some() || usable) {
             ui.state.cursor_icon = CursorIcon::Pointer;
         }
@@ -178,6 +182,10 @@ impl Game {
                 (None, Some(person)) => self.sim.talk_to(person),
                 (None, None) => self.sim.click(under),
             }
+        }
+        if hand.hovered && ui.state.right_pressed {
+            // A right press asks what can be done here instead.
+            self.menu_wanted = Some(self.world_menu(ui.state.pointer));
         }
         // The world keeps its own time, steadily, while anything in it
         // has something to do.
@@ -205,6 +213,10 @@ impl Game {
             self.phase = TICK_SECONDS;
         }
         self.face_people();
+        // Walking up to the bank opens the bag beside it.
+        let banking = self.sim.banking();
+        self.hud.bag_open |= banking && !self.was_banking;
+        self.was_banking = banking;
         let now = ui.now();
         let events = self.sim.take_events();
         self.hud.hear(&events, &self.sim, now);
@@ -241,14 +253,23 @@ impl Game {
         talk::draw_names(ui, &self.sim, &self.person_grounds(), &|world| camera.to_screen(world, view, scale));
         let sight = Sight { player: target, to_screen: &|world| camera.to_screen(world, view, scale), monsters: &monsters, tile_px: camera.tile_px(scale), into: self.world_phase / TICK_SECONDS };
         let wear = self.hud.draw(ui, self.view, &self.sim, &self.item_pictures, &sight);
+        let pointer = ui.state.pointer;
         match wear {
-            Some(Press::Bag(slot)) => self.sim.use_slot(slot),
-            Some(Press::Worn(slot)) => self.sim.unequip(slot),
+            // At the bank a press on the bag puts one in; anywhere else
+            // it wears or drinks.
+            Some(Press::Bag(slot)) if banking => self.put_one(slot),
+            Some(Press::Bag(slot)) => {
+                self.sim.use_slot(slot);
+                // What is worn is kept at once, like what is earned.
+                self.autosave();
+            }
+            Some(Press::Worn(slot)) => {
+                self.sim.unequip(slot);
+                self.autosave();
+            }
+            Some(Press::BagMenu(slot)) => self.menu_wanted = self.bag_menu(slot, pointer),
+            Some(Press::WornMenu(slot)) => self.menu_wanted = self.worn_menu(slot, pointer),
             None => {}
-        }
-        if wear.is_some() {
-            // What is worn is kept at once, like what is earned.
-            self.autosave();
         }
         let into = self.world_phase / TICK_SECONDS;
         if let Some(ability) = hotbar::draw(ui, self.view, &self.sim, &self.ability_pictures, into) {
@@ -260,8 +281,22 @@ impl Game {
             }
             self.sim.make(recipe, count);
         }
+        let asked = bank_panel::draw(ui, self.view, &self.sim, &self.item_pictures);
+        match asked {
+            Some(Asked::Take(slot)) => self.take_one(slot),
+            Some(Asked::Menu(slot)) => self.menu_wanted = self.bank_menu(slot, pointer),
+            Some(Asked::PutBag) => {
+                self.sim.deposit_all();
+                self.autosave();
+            }
+            None => {}
+        }
         if talk::draw(ui, self.view, &self.sim) {
             self.sim.talk_on();
+            ui.state.request_redraw_after(0.0);
+        }
+        if wear.is_some() || asked.is_some() {
+            // What a press changed shows in the next frame.
             ui.state.request_redraw_after(0.0);
         }
 
