@@ -15,7 +15,7 @@ const BRONZE: [u8; 3] = [0xb6, 0x82, 0x49];
 
 /// The game with the player on open grass and someone living `east`
 /// tiles to their east.
-fn with_person(name: &str, kind: PersonKind, east: i32) -> (Harness, Shell<Game>, Game) {
+pub(super) fn with_person(name: &str, kind: PersonKind, east: i32) -> (Harness, Shell<Game>, Game) {
     let (mut h, mut shell, mut game) = playing(name);
     let (x, y) = game.sim.player.tile;
     assert!(game.sim.world.set_person(x + east, y, Some(kind)));
@@ -25,7 +25,7 @@ fn with_person(name: &str, kind: PersonKind, east: i32) -> (Harness, Shell<Game>
 }
 
 /// Where a person's body is on screen: half a tile over their feet.
-fn body_of(game: &Game, person: usize) -> Vec2 {
+pub(super) fn body_of(game: &Game, person: usize) -> Vec2 {
     game.camera.to_screen(game.person_grounds()[person] - Vec2::new(0.0, 0.5), game.view, game.scale)
 }
 
@@ -35,7 +35,7 @@ fn in_the_box(h: &Harness, shell: &Shell<Game>, what: &str) -> Rect {
 }
 
 /// Click on a person and let time pass until they are talking.
-fn hail(h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game, person: usize) {
+pub(super) fn hail(h: &mut Harness, shell: &mut Shell<Game>, game: &mut Game, person: usize) {
     let at = body_of(game, person);
     click(h, shell, game, at);
     assert_eq!(game.sim.awaited(), Some(person), "the click was on them");

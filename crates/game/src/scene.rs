@@ -87,8 +87,10 @@ pub struct Look {
     tuft: Option<SpriteId>,
     /// What marks where the player died.
     pub gravestone: Option<SpriteId>,
-    /// The ring on the ground under the monster the player is set on.
+    /// The ring on the ground under what the player is set on, and a
+    /// wider one for under what is wider than a tile.
     pub target_ring: Option<SpriteId>,
+    pub target_ring_wide: Option<SpriteId>,
     pub player: WalkSprites,
     pub goblin: WalkSprites,
     /// What each person is drawn with, in the order of `PersonKind::ALL`.
@@ -122,12 +124,12 @@ fn person_sheet(kind: PersonKind) -> String {
 
 impl Look {
     pub fn find(set: &SpriteSet) -> Look {
-        Look { tree: set.id("tree"), rock: set.id("rock"), tin_rock: set.id("tin_rock"), rock_spent: set.id("rock_spent"), furnace: set.id("furnace"), anvil: set.id("anvil"), cauldron: set.id("cauldron"), herb_picked: set.id("herb_picked"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft"), gravestone: set.id("gravestone"), target_ring: set.id("target_ring"), player: WalkSprites::find(set, "player"), goblin: WalkSprites::find(set, "goblin"), people: PersonKind::ALL.map(|kind| WalkSprites::find(set, &person_sheet(kind))), gear: Slot::ALL.map(|slot| GearSprites { over: WalkSprites::find(set, &format!("gear_{}", slot.name())), under: WalkSprites::find(set, &format!("gear_{}_under", slot.name())) }) }
+        Look { tree: set.id("tree"), rock: set.id("rock"), tin_rock: set.id("tin_rock"), rock_spent: set.id("rock_spent"), furnace: set.id("furnace"), anvil: set.id("anvil"), cauldron: set.id("cauldron"), herb_picked: set.id("herb_picked"), herb_purple: set.id("herb_purple"), herb_cyan: set.id("herb_cyan"), tuft: set.id("tuft"), gravestone: set.id("gravestone"), target_ring: set.id("target_ring"), target_ring_wide: set.id("target_ring_wide"), player: WalkSprites::find(set, "player"), goblin: WalkSprites::find(set, "goblin"), people: PersonKind::ALL.map(|kind| WalkSprites::find(set, &person_sheet(kind))), gear: Slot::ALL.map(|slot| GearSprites { over: WalkSprites::find(set, &format!("gear_{}", slot.name())), under: WalkSprites::find(set, &format!("gear_{}_under", slot.name())) }) }
     }
 
     /// The names of the sprites it looked for and did not find.
     pub fn missing(&self) -> Vec<String> {
-        let all = [("tree", self.tree), ("rock", self.rock), ("tin_rock", self.tin_rock), ("rock_spent", self.rock_spent), ("furnace", self.furnace), ("anvil", self.anvil), ("cauldron", self.cauldron), ("herb_picked", self.herb_picked), ("herb_purple", self.herb_purple), ("herb_cyan", self.herb_cyan), ("tuft", self.tuft), ("gravestone", self.gravestone), ("target_ring", self.target_ring)];
+        let all = [("tree", self.tree), ("rock", self.rock), ("tin_rock", self.tin_rock), ("rock_spent", self.rock_spent), ("furnace", self.furnace), ("anvil", self.anvil), ("cauldron", self.cauldron), ("herb_picked", self.herb_picked), ("herb_purple", self.herb_purple), ("herb_cyan", self.herb_cyan), ("tuft", self.tuft), ("gravestone", self.gravestone), ("target_ring", self.target_ring), ("target_ring_wide", self.target_ring_wide)];
         let people = PersonKind::ALL.into_iter().zip(&self.people).flat_map(|(kind, sprites)| sprites.missing(&person_sheet(kind)));
         all.into_iter().filter(|(_, id)| id.is_none()).map(|(name, _)| name.to_owned()).chain(self.player.missing("player")).chain(self.goblin.missing("goblin")).chain(people).collect()
     }
@@ -139,6 +141,13 @@ impl Look {
             PropKind::HerbPurple | PropKind::HerbCyan => self.herb_picked,
             _ => None,
         }
+    }
+
+    /// The ring that lies under a kind of prop: the wide one under what
+    /// is drawn wider than a tile, so it shows all round.
+    pub fn ring_under(&self, set: &SpriteSet, kind: PropKind) -> Option<SpriteId> {
+        let wide = self.prop(kind).is_some_and(|id| set.get(id).size.x > 1.0);
+        self.target_ring_wide.filter(|_| wide).or(self.target_ring)
     }
 
     /// The drawings of what is worn in a slot.
@@ -332,9 +341,9 @@ mod tests {
     #[test]
     fn every_sprite_the_scene_asks_for_is_in_the_assets() {
         assert_eq!(Look::find(&set()).missing(), Vec::<String>::new());
-        // With no assets: the thirteen of the map, and eighteen each
+        // With no assets: the fourteen of the map, and eighteen each
         // for the player, the goblin and every person.
-        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 49 + 18 * PersonKind::ALL.len());
+        assert_eq!(Look::find(&SpriteSet::empty()).missing().len(), 50 + 18 * PersonKind::ALL.len());
     }
 
     #[test]

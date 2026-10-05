@@ -400,7 +400,7 @@ anchor = [4.5, 6]
     #[test]
     fn every_anchor_is_at_the_foot_of_its_sprite() {
         let (manifest, dir) = shipped();
-        const FLAT: [&str; 1] = ["target_ring"];
+        const FLAT: [&str; 2] = ["target_ring", "target_ring_wide"];
         for def in &manifest.sprites {
             let [w, h] = match def.rect {
                 Some([_, _, w, h]) => [w as f64, h as f64],

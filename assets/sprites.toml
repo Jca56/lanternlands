@@ -150,10 +150,18 @@ file = "sprites/objects-01.png"
 rect = [836, 580, 276, 248]
 anchor = [124, 220]
 
-# The ring on the ground under the monster the player is set on.
+# The ring on the ground under whatever the player is set on. It is
+# drawn white and coloured by what it is under: a monster, a thing to
+# use, a person.
 [sprites.target_ring]
 file = "sprites/target-ring.png"
 anchor = [100, 100]
+
+# The same, wider: for under what is wider than a tile (a rock, a
+# furnace), so the ring shows all round it.
+[sprites.target_ring_wide]
+file = "sprites/target-ring-wide.png"
+anchor = [150, 150]
 
 [sprites.tuft]
 file = "sprites/tuft.png"

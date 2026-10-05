@@ -7,6 +7,7 @@ use sim::{Ability, Activity, Event, Marker, TICK_SECONDS};
 
 use super::{AUTOSAVE_EVERY, Game, Mode};
 use crate::anim::{Facing, Pose};
+use crate::assets::SpriteId;
 use crate::editor::Tool;
 use crate::hotbar;
 use crate::hud::{Press, Sight};
@@ -43,6 +44,18 @@ pub(super) const GHOST: f32 = 0.5;
 /// How far up the screen, in tiles, what lies on the ground under
 /// someone is put, to be drawn before them. Far too little to see.
 const UNDER: f64 = 1e-4;
+/// The colours of the ring on the ground under what the player is set
+/// on: a monster to fight, a thing to use (the walk ring's gold), a
+/// person to talk with.
+pub(super) const RING_FIGHT: [f32; 4] = [226.0 / 255.0, 72.0 / 255.0, 60.0 / 255.0, 1.0];
+pub(super) const RING_USE: [f32; 4] = [0.757, 0.608, 0.290, 1.0];
+pub(super) const RING_TALK: [f32; 4] = [0.471, 0.682, 0.941, 1.0];
+
+/// A ring on the ground at `ground`, in one of the rings' colours: a
+/// hair up the screen, so it is drawn before what stands there.
+pub(super) fn ring(sprite: Option<SpriteId>, ground: Vec2, tint: [f32; 4]) -> Option<Placed> {
+    sprite.map(|sprite| Placed { sprite, ground: ground - Vec2::new(0.0, UNDER), flip: false, tint })
+}
 
 /// Whether a point of the world, in tiles, is on somebody `height`
 /// tiles tall whose feet are at `feet`.
@@ -214,9 +227,11 @@ impl Game {
         let smooth = dt.min(LONGEST_STEP);
         self.camera.center = if following { self.camera.center + gap * (1.0 - (-FOLLOW_RATE * smooth).exp()) } else { target };
 
-        // Where they are walking to is ringed on the ground; a monster
-        // they are going for is ringed itself, in the world.
-        if let Some((x, y)) = self.sim.player.goal().filter(|_| self.sim.target().is_none()) {
+        // Where they are walking to is ringed on the ground; what they
+        // are going for (a monster, a rock, a person) is ringed itself,
+        // in the world.
+        let set_on = self.sim.target().is_some() || self.sim.using().is_some() || self.sim.awaited().is_some();
+        if let Some((x, y)) = self.sim.player.goal().filter(|_| !set_on) {
             let middle = self.camera.to_screen(Vec2::new(x as f64 + 0.5, y as f64 + 0.5), self.view, self.scale);
             let tile_px = self.camera.tile_px(self.scale);
             ui.draw.ring(middle, tile_px * 0.3, (tile_px * 0.06).max(2.0), GOAL_RING);
@@ -377,11 +392,8 @@ impl Game {
             let into = (self.world_phase / TICK_SECONDS).clamp(0.0, 1.0);
             let grounds = self.monster_grounds();
             for (i, monster) in self.sim.monsters.iter().enumerate().filter(|(_, m)| m.alive()) {
-                if self.sim.target() == Some(i)
-                    && let Some(sprite) = self.look.target_ring
-                {
-                    // On the ground under it: drawn just before it.
-                    extras.push(Placed { sprite, ground: grounds[i] - Vec2::new(0.0, UNDER), flip: false, tint: [1.0; 4] });
+                if self.sim.target() == Some(i) {
+                    extras.extend(ring(self.look.target_ring, grounds[i], RING_FIGHT));
                 }
                 // One swing for each blow; else a walk, a stride to
                 // each tile, the strides taking turns.
@@ -392,6 +404,12 @@ impl Game {
                     extras.push(Placed { sprite, ground: grounds[i], flip, tint: [1.0; 4] });
                 }
             }
+        }
+        if let Some((x, y)) = self.sim.using().filter(|_| !self.editing) {
+            // The rock, herb, station or grave they are set on using:
+            // the grave is no prop, and no wider than a tile.
+            let sprite = self.sim.world.prop_at(x, y).map_or(self.look.target_ring, |prop| self.look.ring_under(&self.sprites, prop.kind));
+            extras.extend(ring(sprite, middle(x, y), RING_USE));
         }
         self.stand_people(&mut extras);
         if let (Some(grave), Some(sprite)) = (&self.sim.grave, self.look.gravestone) {

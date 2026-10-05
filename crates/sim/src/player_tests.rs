@@ -319,3 +319,37 @@ fn at_a_rock_swung_marks_only_the_ticks_a_swing_ends_and_due_the_tick_before() {
     sim.tick_player();
     assert!(!sim.player.swung && !sim.swing_due());
 }
+
+#[test]
+fn what_the_player_is_set_on_using_is_known_from_the_click_until_they_are_done_with_it() {
+    let mut sim = at_the_rock();
+    assert_eq!(sim.using(), None);
+    // A plain walk is set on nothing.
+    sim.click((1, 1));
+    assert_eq!(sim.using(), None);
+    // A rock: on the way to it, and at work on it, until it is spent.
+    sim.click((5, 2));
+    let mut ticks = 0;
+    while !sim.is_spent((5, 2)) {
+        assert_eq!(sim.using(), Some((5, 2)), "tick {ticks}");
+        sim.tick();
+        ticks += 1;
+        assert!(ticks < 2000, "the rock was never mined out");
+    }
+    assert_eq!(sim.using(), None);
+    // A station: on the way to it, and for as long as they stand at it.
+    sim.world.place_prop(P::Furnace, 8, 2);
+    sim.click((8, 2));
+    assert_eq!(sim.using(), Some((8, 2)));
+    run(&mut sim);
+    assert!(sim.station().is_some());
+    assert_eq!(sim.using(), Some((8, 2)));
+    sim.leave_station();
+    assert_eq!(sim.using(), None);
+    // The grave: while they go back for it.
+    sim.grave = Some(crate::combat::Grave { tile: (1, 3), items: Default::default() });
+    sim.click((1, 3));
+    assert_eq!(sim.using(), Some((1, 3)));
+    run(&mut sim);
+    assert_eq!((sim.using(), sim.grave.is_some()), (None, false));
+}

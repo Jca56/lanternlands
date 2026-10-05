@@ -343,3 +343,6 @@ mod alchemy;
 
 #[path = "app_people_tests.rs"]
 mod people;
+
+#[path = "app_ring_tests.rs"]
+mod rings;

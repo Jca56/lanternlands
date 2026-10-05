@@ -5,7 +5,7 @@ use lntrn_math::Vec2;
 use sim::TICK_SECONDS;
 
 use super::Game;
-use super::view::{GHOST, on_body};
+use super::view::{GHOST, RING_TALK, on_body, ring};
 use crate::anim::{Facing, Pose};
 use crate::scene::Placed;
 use crate::wear::{dress, person_wear};
@@ -42,8 +42,9 @@ impl Game {
     }
 
     /// Stand the people in `extras`: each where they are, dressed, at a
-    /// walk when they move; and while editing, a ghost of each on the
-    /// tile they live on instead.
+    /// walk when they move, with a ring under the one the player is
+    /// coming to or talking with; and while editing, a ghost of each on
+    /// the tile they live on instead.
     pub(super) fn stand_people(&self, extras: &mut Vec<Placed>) {
         if self.editing {
             for (kind, x, y) in self.sim.world.people() {
@@ -56,6 +57,9 @@ impl Game {
         let into = (self.world_phase / TICK_SECONDS).clamp(0.0, 1.0);
         let grounds = self.person_grounds();
         for (i, person) in self.sim.people.iter().enumerate() {
+            if self.sim.awaited() == Some(i) {
+                extras.extend(ring(self.look.target_ring, grounds[i], RING_TALK));
+            }
             let pose = Pose::at(person.moved(), self.sim.ticks, into);
             let facing = self.person_facing.get(i).copied().unwrap_or_default();
             let worn: Vec<_> = person_wear(person.kind).iter().map(|&(slot, tint)| (self.look.gear(slot), tint)).collect();

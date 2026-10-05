@@ -268,6 +268,16 @@ impl Sim {
         }
     }
 
+    /// The tile of what the player is set on using: a node, a station
+    /// or the grave they are on their way to, the node they are working,
+    /// or the station they stand at.
+    pub fn using(&self) -> Option<(i32, i32)> {
+        match (self.player.intent, self.player.activity) {
+            (Some(Intent::Use(at)), _) | (_, Some(Activity::Working { at, .. } | Activity::Making { at, .. })) => Some(at),
+            _ => self.player.station.map(|(_, at)| at),
+        }
+    }
+
     /// Set the player walking to `target`, or as near it as they can
     /// get. Whatever else they were at is dropped.
     pub fn walk_to(&mut self, target: (i32, i32)) {
